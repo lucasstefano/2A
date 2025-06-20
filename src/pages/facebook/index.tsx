@@ -111,6 +111,23 @@ const CartaTexto = styled.div`
   width: 100%;
 `;
 
+const TextoH1 = styled.div`
+  font-size: 28px;
+  font-weight: bold;
+  color: #000000;
+  z-index: 3;
+  text-align: center;
+  width: 100%;
+`;
+
+const TextoP = styled.div`
+  font-size: 14px;
+  color: #000000;
+  z-index: 3;
+  text-align: center;
+  width: 100%;
+`;
+
 const ModalOverlay = styled.div`
   position: fixed;
   top: 0;
@@ -241,7 +258,7 @@ const Page: React.FC = () => {
       }, 8000);
       setTimeout(() => {
         setShowAmigos(true);
-      }, 180000); // 3 minutos
+      }, 90000); // 3 minutos
       setTimeout(() => {
         setShowCarta(true);
       }, 15000); // 5 segundos após clique
@@ -306,11 +323,13 @@ const Page: React.FC = () => {
         <ModalOverlay onClick={() => setShowModal(false)}>
           <ModalContent onClick={(e) => e.stopPropagation()}>
             <CloseButton onClick={() => setShowModal(false)}>×</CloseButton>
-            <h2>Oi Anna 🐱!</h2>
-            <p>
-MENSAGEM DESJEANDO SE TA TUDO BEM
-</p>
-          </ModalContent>
+           <TextoH1>Oi Anna 🐱!!</TextoH1>
+           <TextoP> Mesmo depois de você ter me dito que estava melhor, ainda percebo uma diferença... e o seu sumiço. Mas não estou mandando isso pra você vir falar comigo, nem pra cobrar nenhuma explicação se ta tudo bem ou não.
+            Só queria desejar, de coração, que independente do caminho que a vida tomar você fique bem.
+          Talvez seja um pouco egoísmo meu querer te ver feliz, porque a sua felicidade também me faz bem.
+          Enfim, quis deixar essa mensagem e te dizer que, mesmo com a distância, eu sempre vou estar por aqui se um dia quiser conversar.
+          Fica com esses gatinhos dançando, pra tentar alegrar pelo menos 1% do seu dia. 🐱💛</TextoP>
+                    </ModalContent>
         </ModalOverlay>
       )}
     </WhiteBackground>
