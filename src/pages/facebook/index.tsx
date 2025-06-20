@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, type MouseEvent } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import presente from '../../assets/presente.png';
 import gatinho from '../../assets/gato.png';
 import gatinho2 from '../../assets/gato2.png';
@@ -209,7 +209,7 @@ const Page: React.FC = () => {
     }
   };
 
-  const handleClick = (event: MouseEvent<HTMLImageElement>) => {
+  const handleClick = () => {
     if (!clicked) {
       confetti({ particleCount: 150, spread: 70, origin: { y: 0.8 } });
 
@@ -308,10 +308,7 @@ const Page: React.FC = () => {
             <CloseButton onClick={() => setShowModal(false)}>×</CloseButton>
             <h2>Oi Anna 🐱!</h2>
             <p>
-Espero que esteja tudo bem, mesmo depois de você ter me falado que estava melhor.
-Ainda percebo uma diferença e seu sumiço, mas não tô mandando isso pra você vir falar comigo. 
-Só quero desejar tudo de bom para ti, do jeito que tiver que ser.  Então fica com esses gatinhos dançando para alegrar 1% 
-Fica bem, tá?
+MENSAGEM DESJEANDO SE TA TUDO BEM
 </p>
           </ModalContent>
         </ModalOverlay>
