@@ -9,8 +9,7 @@ import amigo2 from '../../assets/amigo2.gif';
 import amigo3 from '../../assets/amigo2.gif';
 import amigo4 from '../../assets/amigo2.gif';
 import confeteAudio from '../../assets/bongocat.mp4';
-import cartaImg from '../../assets/cart.png';
-import styled from 'styled-components';
+import styled, { keyframes } from 'styled-components';
 import party from 'party-js';
 import confetti from 'canvas-confetti';
 
@@ -25,12 +24,7 @@ const WhiteBackground = styled.div`
   overflow: hidden;
 `;
 
-interface ImageButtonProps {
-  flipped: boolean;
-  scale?: number;
-}
-
-const ImageButton = styled.img<ImageButtonProps>`
+const ImageButton = styled.img<{ flipped: boolean }>`
   width: 300px;
   height: 300px;
   cursor: pointer;
@@ -43,7 +37,7 @@ const ImageButton = styled.img<ImageButtonProps>`
   transform: ${({ flipped }) => (flipped ? 'scaleX(-1)' : 'scaleX(1)')};
 `;
 
-const FlataImage = styled.img<ImageButtonProps>`
+const FlataImage = styled.img<{ scale?: number }>`
   position: absolute;
   width: 250px;
   height: 250px;
@@ -57,7 +51,7 @@ const FlataImage = styled.img<ImageButtonProps>`
   transition: transform 0.1s linear;
 `;
 
-const FlataImage2 = styled.img<ImageButtonProps>`
+const FlataImage2 = styled.img<{ scale?: number }>`
   position: absolute;
   width: 250px;
   height: 250px;
@@ -67,8 +61,7 @@ const FlataImage2 = styled.img<ImageButtonProps>`
   user-select: none;
   pointer-events: none;
   z-index: 1;
-  transform: ${({ scale = 1 }) =>
-    `translate(-80%, -50%) scale(-1, 1) scale(${scale})`};
+  transform: ${({ scale = 1 }) => `translate(-80%, -50%) scale(-1, 1) scale(${scale})`};
   transition: transform 0.1s linear;
 `;
 
@@ -87,19 +80,12 @@ const AmigoGif = styled.img<{ position: 'top-left' | 'top-right' | 'bottom-left'
   }}
 `;
 
-const Carta = styled.img`
-  position: absolute;
-  bottom: 100px;
-  width: 180px; /* aumentamos */
-  height: auto;
-  cursor: pointer;
-  z-index: 3;
-  transition: transform 0.3s ease;
-
-  &:hover {
-    transform: scale(1.2); /* cresce suavemente */
-  }
+const fadeOut = keyframes`
+  0% { opacity: 1; }
+  90% { opacity: 1; }
+  100% { opacity: 0; transform: translateY(-10px); }
 `;
+
 const CartaTexto = styled.div`
   position: absolute;
   bottom: 90px;
@@ -111,54 +97,31 @@ const CartaTexto = styled.div`
   width: 100%;
 `;
 
-const TextoH1 = styled.div`
-  font-size: 28px;
-  font-weight: bold;
-  color: #000000;
-  z-index: 3;
-  text-align: center;
-  width: 100%;
-`;
 
-const TextoP = styled.div`
-  font-size: 14px;
-  color: #000000;
-  z-index: 3;
-  text-align: center;
-  width: 100%;
-`;
-
-const ModalOverlay = styled.div`
-  position: fixed;
-  top: 0;
-  left: 0;
-  width: 100vw;
-  height: 100vh;
-  background: rgba(0,0,0,0.5);
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  z-index: 4;
-`;
-
-const ModalContent = styled.div`
-  background: white;
-  padding: 40px;
-  border-radius: 12px;
-  width: 80%;
-  max-width: 500px;
-  position: relative;
-  text-align: center;
-`;
-
-const CloseButton = styled.button`
+const ChatContainer = styled.div`
   position: absolute;
-  top: 10px;
-  right: 15px;
-  background: transparent;
-  border: none;
-  font-size: 24px;
-  cursor: pointer;
+  bottom: 120px;
+  max-width: 80%;
+  padding: 20px;
+  border-radius: 12px;
+
+  z-index: 4;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+`;
+
+const MessageBubble = styled.div`
+  align-self: flex-end;
+  background: #dcf8c6;
+  color: #333;
+  padding: 10px 15px;
+  border-radius: 20px;
+  max-width: 80%;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+  font-size: 15px;
+  white-space: pre-line;
+  animation: ${fadeOut} 10s forwards;
 `;
 
 type Stage = 'initial' | 'gatinho' | 'gatinho2' | 'gatinho3';
@@ -170,8 +133,10 @@ const Page: React.FC = () => {
   const [showFlata, setShowFlata] = useState(false);
   const [flataScale, setFlataScale] = useState(1);
   const [showAmigos, setShowAmigos] = useState(false);
-  const [showCarta, setShowCarta] = useState(false);
-  const [showModal, setShowModal] = useState(false);
+  const [showChat, setShowChat] = useState(false);
+  const [chatMessages, setChatMessages] = useState<string[]>([]);
+  const [currentMsgIndex, setCurrentMsgIndex] = useState(0);
+  const [isTyping, setIsTyping] = useState(false);
 
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const audioCtxRef = useRef<AudioContext | null>(null);
@@ -181,9 +146,37 @@ const Page: React.FC = () => {
   const effectsIntervalRef = useRef<number | null>(null);
   const stageRef = useRef<Stage>('initial');
 
+const allMessages = [
+    'Oi Anna 🐱',
+    'Mesmo depois de você ter me dito que estava melhor, ainda notei sua ausência.',
+    'Não estou te cobrando atenção, nem esperando que fale comigo, não é isso.',
+    'Só queria te desejar, de coração, que fique tudo bem, idependente se tem alguma coisa ou não.',
+    'Espero que seus dias sejam sempre leves e bons.',
+    'Mesmo que eu não consiga estar sempre pra perturbar...',
+    'E Mesmo que você queira um momento só seu, tudo bem também.',
+    'Só espero que esse gatinho dançando te faça sorrir sempre que estiver se sentindo pra baixo.',
+    'Sua felicidade me faz bem também.',
+    'Sempre vou estar por aqui se um dia quiser conversar.',
+    'Fica bem, tá? 💛',
+    'Sim, essa foi a Mensagem Mais Carro de Som e Brega possivel! Por isso é bom.',
+  ];
+
+
   useEffect(() => {
     stageRef.current = stage;
   }, [stage]);
+
+  useEffect(() => {
+    if (showChat && currentMsgIndex < allMessages.length) {
+      setIsTyping(true);
+      const delay = setTimeout(() => {
+        setChatMessages((prev) => [...prev, allMessages[currentMsgIndex]]);
+        setCurrentMsgIndex((prev) => prev + 1);
+        setIsTyping(false);
+      }, 3000);
+      return () => clearTimeout(delay);
+    }
+  }, [currentMsgIndex, showChat]);
 
   const threshold = 150;
   let lastBeatTime = 0;
@@ -194,11 +187,7 @@ const Page: React.FC = () => {
     analyserRef.current.getByteFrequencyData(dataArrayRef.current);
     const maxVolume = Math.max(...dataArrayRef.current);
     const now = performance.now();
-    if (
-      stageRef.current === 'gatinho3' &&
-      maxVolume > threshold &&
-      now - lastBeatTime > minBeatGap
-    ) {
+    if (stageRef.current === 'gatinho3' && maxVolume > threshold && now - lastBeatTime > minBeatGap) {
       lastBeatTime = now;
       setFlipped((prev) => !prev);
       setFlataScale(1.3);
@@ -258,10 +247,10 @@ const Page: React.FC = () => {
       }, 8000);
       setTimeout(() => {
         setShowAmigos(true);
-      }, 90000); // 3 minutos
+      }, 22000);
       setTimeout(() => {
-        setShowCarta(true);
-      }, 15000); // 5 segundos após clique
+        setShowChat(true);
+      }, 15000);
     }
   };
 
@@ -270,6 +259,7 @@ const Page: React.FC = () => {
       if (animationFrameIdRef.current) cancelAnimationFrame(animationFrameIdRef.current);
       if (audioCtxRef.current) audioCtxRef.current.close();
       if (effectsIntervalRef.current) clearInterval(effectsIntervalRef.current);
+      if (audioRef.current) audioRef.current.pause();
     };
   }, []);
 
@@ -285,8 +275,8 @@ const Page: React.FC = () => {
     <WhiteBackground>
       {showFlata && stage === 'gatinho3' && (
         <>
-          <FlataImage src={flata} alt="Flata atrás" flipped={flipped} scale={flataScale} />
-          <FlataImage2 src={flata} alt="Flata atrás" flipped={flipped} scale={flataScale} />
+          <FlataImage src={flata} alt="Flata atrás" scale={flataScale} />
+          <FlataImage2 src={flata} alt="Flata atrás" scale={flataScale} />
         </>
       )}
 
@@ -297,9 +287,8 @@ const Page: React.FC = () => {
         flipped={stage === 'gatinho3' ? flipped : false}
         draggable={false}
       />
-
-      {(currentImage !== gatinho && currentImage !== gatinho2 && currentImage !== gatinho3) && (
-        <CartaTexto>Clique AQUI!</CartaTexto>
+    {(currentImage !== gatinho && currentImage !== gatinho2 && currentImage !== gatinho3) && (
+        <CartaTexto>Clique no Presente!</CartaTexto>
       )}
       <audio ref={audioRef} src={confeteAudio} />
 
@@ -312,25 +301,15 @@ const Page: React.FC = () => {
         </>
       )}
 
-        {showCarta && (
-        <>
-          <Carta src={cartaImg} alt="Carta" onClick={() => setShowModal(true)} />
-          <CartaTexto>Abra a Carta!</CartaTexto>
-        </>
-      )}
-
-      {showModal && (
-        <ModalOverlay onClick={() => setShowModal(false)}>
-          <ModalContent onClick={(e) => e.stopPropagation()}>
-            <CloseButton onClick={() => setShowModal(false)}>×</CloseButton>
-           <TextoH1>Oi Anna 🐱!!</TextoH1>
-           <TextoP> Mesmo depois de você ter me dito que estava melhor, ainda percebo uma diferença... e o seu sumiço. Mas não estou mandando isso pra você vir falar comigo, nem pra cobrar nenhuma explicação se ta tudo bem ou não.
-            Só queria desejar, de coração, que independente do caminho que a vida tomar você fique bem.
-          Talvez seja um pouco egoísmo meu querer te ver feliz, porque a sua felicidade também me faz bem.
-          Enfim, quis deixar essa mensagem e te dizer que, mesmo com a distância, eu sempre vou estar por aqui se um dia quiser conversar.
-          Fica com esses gatinhos dançando, pra tentar alegrar pelo menos 1% do seu dia. 🐱💛</TextoP>
-                    </ModalContent>
-        </ModalOverlay>
+      {showChat && (
+        <ChatContainer>
+          {chatMessages.map((msg, i) => (
+            <MessageBubble key={i}>{msg}</MessageBubble>
+          ))}
+          {isTyping && (
+            <MessageBubble><i>digitando...</i></MessageBubble>
+          )}
+        </ChatContainer>
       )}
     </WhiteBackground>
   );
