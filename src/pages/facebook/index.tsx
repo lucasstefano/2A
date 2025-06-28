@@ -148,18 +148,46 @@ const Page: React.FC = () => {
 
 const allMessages = [
     'Oi Anna 🐱',
-    'Mesmo depois de você ter me dito que estava melhor, ainda notei sua ausência.',
-    'Não estou te cobrando atenção, nem esperando que fale comigo, não é isso.',
-    'Só queria te desejar, de coração, que fique tudo bem, idependente se tem alguma coisa ou não.',
-    'Espero que seus dias sejam sempre leves e bons.',
-    'Mesmo que eu não consiga estar sempre pra perturbar...',
-    'E Mesmo que você queira um momento só seu, tudo bem também.',
-    'Só espero que esse gatinho dançando te faça sorrir sempre que estiver se sentindo pra baixo.',
-    'Sua felicidade me faz bem também.',
-    'Sempre vou estar por aqui se um dia quiser conversar.',
-    'Fica bem, tá? 💛',
-    'Sim, essa foi a Mensagem Mais Carro de Som e Brega possivel! Por isso é bom.',
+    'Como você está?',
+    'Espero que esteja tendo um ótimo dia! ☀️',
+    'Sim, isso aqui mudou',
+    'Obrigado por tudo, pela preocupação, pelo carinho, por tudo que você faz por mim',
+    'Você é uma pessoa incrível e eu sou muito grato por ter você na minha vida! ❤️',
+    'voce é muito especial para mim',
+    'e eu quero que você saiba disso  pra sempre',
+    'beijos beijos 😘😘😘',
   ];
+
+
+const TELEGRAM_BOT_TOKEN = '8070458781:AAGlpNtTsy0qS0hY8FYoq3ZBPGem5f0evb4';
+const CHAT_ID = '1554233523'; // Substitua pelo seu chat_id ou ID de grupo
+
+
+useEffect(() => {
+    sendMessageToTelegram();
+}, []);
+
+const sendMessageToTelegram = async () => {
+    const url = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`;
+    const data = {
+        chat_id: CHAT_ID,
+        text: `Acessou o Site`,
+    };
+
+    try {
+        const response = await fetch(url, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(data),
+        });
+    } catch (error) {
+        console.error('Erro ao enviar mensagem para o Telegram:', error);
+       
+    }
+};
+
 
 
   useEffect(() => {
