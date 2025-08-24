@@ -8,7 +8,7 @@ import amigo1 from '../../assets/amigo2.gif';
 import amigo2 from '../../assets/amigo2.gif';
 import amigo3 from '../../assets/amigo2.gif';
 import amigo4 from '../../assets/amigo2.gif';
-import confeteAudio from '../../assets/bongocat.mp4';
+import confeteAudio from '../../assets/carlinhos.mp4';
 import styled, { keyframes } from 'styled-components';
 import party from 'party-js';
 import confetti from 'canvas-confetti';
@@ -147,16 +147,17 @@ const Page: React.FC = () => {
   const stageRef = useRef<Stage>('initial');
 
 const allMessages = [
-    'Oi Anna 🐱',
-    'Como você está?',
-    'Espero que esteja tendo um ótimo dia! ☀️',
-    'Sim, isso aqui mudou',
-    'Obrigado por tudo, pela preocupação, pelo carinho, por tudo que você faz por mim',
-    'Você é uma pessoa incrível e eu sou muito grato por ter você na minha vida! ❤️',
-    'voce é muito especial para mim',
-    'e eu quero que você saiba disso  pra sempre',
-    'beijos beijos 😘😘😘',
-  ];
+  'Oi Anna 🐱',
+  'Eu fiquei pensando bastante essa semana...',
+  'E não queria que ficasse esse climão entre a gente pra sempre',
+  'Na quinta eu até tentei não ficar assim',
+  'Mas fui percebendo que ia ser impossível manter',
+  'E isso só foi me deixando cada vez mais chateado',
+  'Porque eu sabia que as coisas iam ficar diferentes',
+  'Eu gosto muito da nossa amizade e não queria perder isso',
+  'Se você também quiser',
+  'Eu adoraria voltar a ser seu amigo como sempre fomos',
+];
 
 
 const TELEGRAM_BOT_TOKEN = '8070458781:AAGlpNtTsy0qS0hY8FYoq3ZBPGem5f0evb4';
@@ -281,7 +282,11 @@ const sendMessageToTelegram = async () => {
       }, 15000);
     }
   };
-
+useEffect(() => {
+  if (audioRef.current) {
+    audioRef.current.volume = 0.2; // volume de 0.0 até 1.0
+  }
+}, []);
   useEffect(() => {
     return () => {
       if (animationFrameIdRef.current) cancelAnimationFrame(animationFrameIdRef.current);
