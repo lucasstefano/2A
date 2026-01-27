@@ -422,7 +422,7 @@ ROTEIRO:
   align-self: ${u=>u.role==="HUMANO"?"flex-end":u.role==="LUNA"?"flex-start":"center"};
   
   /* Cores de Fundo */
-  background: ${u=>u.role==="HUMANO"?"#dcf8c6":u.role==="LUNA"?"#ffffff":"#ffd7d7"};
+  background: ${u=>u.role==="HUMANO"?"#82c252":u.role==="LUNA"?"#ffffff":"#ffd7d7"};
   
   /* Cores de Texto (PRETO FORÇADO) */
   color: ${u=>u.role==="SYSTEM"?"#b71c1c":"#000000"};
