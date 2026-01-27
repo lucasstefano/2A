@@ -302,7 +302,7 @@ ROTEIRO:
   1) "Vocês têm programa de afiliados?"
   2) "Posso vender e ganhar comissão?"
 - Se direcionar canal correto: "Ótimo, vou mandar. [FIM]"`}],$v=Oe.div`
-  width: 100%;
+  width: 98vw;
   max-width: 100vw;
   box-sizing: border-box;
   padding: 10px; 
