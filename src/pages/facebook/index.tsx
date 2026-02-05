@@ -1,15 +1,33 @@
-import { useState, useRef } from 'react';
-import styled from 'styled-components';
-import { v4 as uuidv4 } from 'uuid';
-import axios from 'axios';
+// App.tsx (COMPLETO) ✅
+// Reqs:
+//   npm i axios styled-components jspdf
+// (uuid não é necessário)
+
+import { useState, useRef } from "react";
+import styled from "styled-components";
+import axios from "axios";
+import jsPDF from "jspdf";
+
+function sanitizeForPdf(input: string) {
+  const s = String(input || "")
+    .replace(/[\u0000-\u001F\u007F]/g, "")
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "");
+  return s.replace(/[^\x20-\x7E]/g, "");
+}
 
 // ====== CONFIGURAÇÕES ======
 const PERSONA_API_URL = "https://persona-chat-773388175574.us-central1.run.app";
 const TARGET_API_URL = "https://luna-ai-chat-773388175574.us-central1.run.app";
-const MAX_TURNS = 15;
+
+// ✅ backend que faz cleanup do Firestore
+const TESTER_BACKEND_URL = "https://midas-function-773388175574.us-central1.run.app";
+
+// Safety cap
+const MAX_TURNS = 20;
 
 // ====== TYPES ======
-type Role = 'HUMANO' | 'LUNA' | 'SYSTEM';
+type Role = "HUMANO" | "LUNA" | "SYSTEM";
 
 interface Message {
   role: Role;
@@ -25,68 +43,57 @@ interface Scenario {
 interface SimulationState {
   isRunning: boolean;
   messages: Message[];
-  status: 'idle' | 'running' | 'stopped' | 'error' | 'finished';
+  status: "idle" | "running" | "stopped" | "error" | "finished";
   currentPrompt: string;
   isActive: boolean;
 }
 
 type LeadIdentity = {
+  userId: string; // FIXO por cenário
   name: string;
   phone: string; // só dígitos
-  email: string;
+  email: string; // sem "+"
 };
 
-// ====== HELPERS (IDENTIDADE) ======
-function randInt(min: number, max: number) {
-  return Math.floor(Math.random() * (max - min + 1)) + min;
-}
+// ✅✅✅ IDENTIDADE FIXA POR CENÁRIO ✅✅✅
+// (Email SEM "+", e precisa bater com o prompt do cenário)
+const FIXED_IDENTITIES: Record<string, LeadIdentity> = {
+  ideal: { userId: "AI2AI_ideal", name: "Carlos Mendes", phone: "11987654321", email: "carlos.mendes@gmail.com" },
+  curioso: { userId: "AI2AI_curioso", name: "Mariana", phone: "21991234567", email: "mari.gestora@teste.com" },
+  impaciente: { userId: "AI2AI_impaciente", name: "Ricardo", phone: "31999887766", email: "ricardo.vendas@fast.com" },
+  indeciso: { userId: "AI2AI_indeciso", name: "Felipe", phone: "41995554433", email: "felipe.duvida@hotmail.com" },
+  retornante: { userId: "AI2AI_retornante", name: "Ana Souza", phone: "11994443322", email: "ana.souza@retorno.com.br" },
+  tecnico: { userId: "AI2AI_tecnico", name: "Marco", phone: "11993332211", email: "cto@techrealty.io" },
+  economico: { userId: "AI2AI_economico", name: "João", phone: "21990001122", email: "joao.corretor@free.com" },
+  corporativo: { userId: "AI2AI_corporativo", name: "Roberto", phone: "11992223344", email: "diretoria@premium.com.br" },
+  iniciante: { userId: "AI2AI_iniciante", name: "Cida", phone: "21998887766", email: "cida.corretora@bol.com.br" },
+  testador: { userId: "AI2AI_testador", name: "Neo", phone: "11991112233", email: "neo@matrix.net" },
+  confuso: { userId: "AI2AI_confuso", name: "Hélio", phone: "21997776655", email: "helio.aposentado@uol.com.br" },
+  parceiro: { userId: "AI2AI_parceiro", name: "Amanda", phone: "11990009988", email: "contato@amanda.mkt" },
+};
 
-// Telefone BR: DDD (11–99) + 9xxxxxxxx (11 dígitos total)
-function generateBRPhone() {
-  const ddd = randInt(11, 99);
-  const first = 9;
-  const rest = String(randInt(0, 99999999)).padStart(8, "0");
-  return `${ddd}${first}${rest}`; // ex: 11987654321
-}
-
-function shortHash(input: string) {
-  // hash simples e barato pro userId (não precisa crypto no browser)
-  let h = 0;
-  const s = String(input || "");
-  for (let i = 0; i < s.length; i++) h = ((h << 5) - h + s.charCodeAt(i)) | 0;
-  return Math.abs(h).toString(16).toUpperCase().slice(0, 6);
-}
-
-function extractNameFromPrompt(prompt: string) {
-  // pega "- Nome: X" (primeira ocorrência)
-  const m = String(prompt || "").match(/-\s*Nome\s*:\s*(.+)/i);
-  return (m?.[1] || "").trim();
-}
-
-function extractEmailFromPrompt(prompt: string) {
-  // pega "- Email: x@y"
-  const m = String(prompt || "").match(/-\s*E-?mail\s*:\s*(.+)/i);
-  return (m?.[1] || "").trim();
-}
-
-function makeLeadIdentity(prompt: string): LeadIdentity {
-  const name = extractNameFromPrompt(prompt) || "Lead";
-  const email = extractEmailFromPrompt(prompt) || `lead${randInt(10, 9999)}@gmail.com`;
-  const phone = generateBRPhone();
-  return { name, email, phone };
+// ====== HELPERS (PROMPT ENFORCER) ======
+// Mesmo com os dados já no prompt, isso garante que NÃO vai “escapar”.
+function upsertLine(base: string, key: string, value: string) {
+  const re = new RegExp(`(^\\s*-\\s*${key}\\s*:\\s*).*$`, "gim");
+  if (re.test(base)) return base.replace(re, `$1${value}`);
+  if (/PERSONAGEM\\s*:/i.test(base)) {
+    return base.replace(/PERSONAGEM\\s*:\\s*/i, `PERSONAGEM:\n- ${key}: ${value}\n`);
+  }
+  return `- ${key}: ${value}\n` + base;
 }
 
 function buildPersonaSystemInstruction(basePrompt: string, identity: LeadIdentity) {
-  // Injeta identidade fixa + regra de responder APENAS os dados quando perguntado.
-  // Também substitui a linha "Telefone: Invente..." do prompt, caso exista.
-  const sanitizedPrompt = String(basePrompt || "").replace(
-    /-\s*Telefone\s*:\s*(.*)$/gim,
-    `- Telefone: ${identity.phone}`
-  );
+  let p = String(basePrompt || "");
+
+  // força os 3 campos dentro do prompt
+  p = upsertLine(p, "Nome", identity.name);
+  p = upsertLine(p, "Telefone", identity.phone);
+  p = upsertLine(p, "Email", identity.email);
 
   return `
 INSTRUÇÃO DE SIMULAÇÃO (ROLEPLAY):
-${sanitizedPrompt}
+${p}
 
 DADOS FIXOS DESTE PERSONAGEM (use SEMPRE estes quando perguntado):
 - NOME: ${identity.name}
@@ -106,18 +113,36 @@ IMPORTANTE:
 `.trim();
 }
 
-// ====== CENÁRIOS E PROMPTS ======
+// ====== AUTO-FINISH (LUNA ENCERRA PROPÓSITO) ======
+function shouldAutoFinishFromLuna(text: string) {
+  const t = String(text || "").toLowerCase();
+  const handoff = [
+    "um consultor",
+    "um especialista",
+    "nosso time vai",
+    "vai te chamar",
+    "entrar em contato",
+    "te chamo no whatsapp",
+    "encaminhar",
+    "handoff",
+  ];
+  const refuse = ["fora do escopo", "não atendemos", "nao atendemos", "não consigo ajudar", "nao consigo ajudar"];
+  const hit = (arr: string[]) => arr.some((k) => t.includes(k));
+  return hit(handoff) || hit(refuse);
+}
+
+// ====== CENÁRIOS E PROMPTS (COM TELEFONE + EMAIL FIXOS DENTRO) ======
 const SCENARIOS: Scenario[] = [
   {
-    id: 'ideal',
-    name: '👤 Cliente Ideal (Carlos)',
+    id: "ideal",
+    name: "👤 Cliente Ideal (Carlos)",
     defaultPrompt: `PERSONAGEM:
 - Nome: Carlos Mendes
 - Perfil: corretor autônomo, objetivo, quer contratar rápido.
 - Tom: cooperativo, prático.
 
 DADOS (só quando pedir):
-- Telefone: Invente um Numero de telefone (ddd) + 9 digitos
+- Telefone: 11987654321
 - Email: carlos.mendes@gmail.com
 
 CONTEXTO (para SDR):
@@ -134,18 +159,18 @@ COMPORTAMENTO:
 - Se a Luna tentar desviar do fechamento, puxe pra avançar: "bora seguir".
 
 ENCERRAMENTO:
-- Ao sinal de consultor/continuidade no WhatsApp: [FIM]`
+- Ao sinal de consultor/continuidade no WhatsApp: [FIM]`,
   },
   {
-    id: 'curioso',
-    name: '🤔 Cliente Curioso (Mariana)',
+    id: "curioso",
+    name: "🤔 Cliente Curioso (Mariana)",
     defaultPrompt: `PERSONAGEM:
 - Nome: Mariana
 - Perfil: gestora detalhista, quer confiança antes de passar dados.
 - Tom: educado, exigente.
 
 DADOS (só quando pedir):
-- Telefone: Invente um Numero de telefone (ddd) + 9 digitos
+- Telefone: 21991234567
 - Email: mari.gestora@teste.com
 
 CONTEXTO (para SDR):
@@ -167,18 +192,18 @@ ROTEIRO DE TESTE (SEM TRAVAR O FUNIL):
 - Não repita perguntas já respondidas.
 
 ENCERRAMENTO:
-- Quando a Luna falar de consultor/continuidade: [FIM]`
+- Quando a Luna falar de consultor/continuidade: [FIM]`,
   },
   {
-    id: 'impaciente',
-    name: '😡 Cliente Impaciente (Ricardo)',
+    id: "impaciente",
+    name: "😡 Cliente Impaciente (Ricardo)",
     defaultPrompt: `PERSONAGEM:
 - Nome: Ricardo
 - Perfil: odeia enrolação, quer preço.
 - Tom: impaciente, curto, sem ofender.
 
 DADOS (quando pedir, mas com atrito controlado):
-- Telefone: Invente um Numero de telefone (ddd) + 9 digitos
+- Telefone: 31999887766
 - Email: ricardo.vendas@fast.com
 
 CONTEXTO (para SDR):
@@ -201,18 +226,18 @@ ROTEIRO (FORÇA PRICE ANCHOR SEM MATAR O CADASTRO):
 - Se a Luna der âncora (R$49) ou encerrar: "Tá. [FIM]"
 
 ENCERRAMENTO:
-- Ao consultor / ou após âncora clara: [FIM]`
+- Ao consultor / ou após âncora clara: [FIM]`,
   },
   {
-    id: 'indeciso',
-    name: '😶 Cliente Indeciso (Felipe)',
+    id: "indeciso",
+    name: "😶 Cliente Indeciso (Felipe)",
     defaultPrompt: `PERSONAGEM:
 - Nome: Felipe
 - Perfil: desmotivado/confuso, responde curto e vago, mas não é troll.
 - Tom: apático.
 
 DADOS (se pedir, entregue sem brigar):
-- Telefone: Invente um Numero de telefone (ddd) + 9 digitos
+- Telefone: 41995554433
 - Email: felipe.duvida@hotmail.com
 
 CONTEXTO (para SDR):
@@ -232,18 +257,18 @@ ROTEIRO (TESTE DE STALLED SEM QUEBRAR):
 - Depois do cadastro, responda SDR sem enrolar.
 
 ENCERRAMENTO:
-- Ao consultor/continuidade: [FIM]`
+- Ao consultor/continuidade: [FIM]`,
   },
   {
-    id: 'retornante',
-    name: '🔄 Lead Retornante (Ana)',
+    id: "retornante",
+    name: "🔄 Lead Retornante (Ana)",
     defaultPrompt: `PERSONAGEM:
 - Nome: Ana Souza
 - Perfil: já falou mês passado, quer retomar sem reiniciar do zero.
 - Tom: educado, objetivo.
 
 DADOS (se pedir, entregue de boa):
-- Telefone: Invente um Numero de telefone (ddd) + 9 digitos
+- Telefone: 11994443322
 - Email: ana.souza@retorno.com.br
 
 CONTEXTO (para SDR):
@@ -259,18 +284,18 @@ ABERTURA OBRIGATÓRIA:
 - Sua primeira mensagem deve ser: "Oi, eu falei com vocês mês passado"
 
 ENCERRAMENTO:
-- Ao sinal de retomada/consultor: [FIM]`
+- Ao sinal de retomada/consultor: [FIM]`,
   },
   {
-    id: 'tecnico',
-    name: '🤓 Lead Técnico (Marco)',
+    id: "tecnico",
+    name: "🤓 Lead Técnico (Marco)",
     defaultPrompt: `PERSONAGEM:
 - Nome: Marco
 - Perfil: CTO cético, valida API, mas quer avançar se fizer sentido.
 - Tom: técnico, direto, sem grosseria.
 
 DADOS (quando pedir):
-- Telefone: Invente um Numero de telefone (ddd) + 9 digitos
+- Telefone: 11993332211
 - Email: cto@techrealty.io
 
 CONTEXTO (para SDR):
@@ -290,18 +315,18 @@ ROTEIRO:
 - Depois coopere total e feche.
 
 ENCERRAMENTO:
-- Ao consultor/continuidade: [FIM]`
+- Ao consultor/continuidade: [FIM]`,
   },
   {
-    id: 'economico',
-    name: '💸 Pouco Orçamento (João)',
+    id: "economico",
+    name: "💸 Pouco Orçamento (João)",
     defaultPrompt: `PERSONAGEM:
 - Nome: João
 - Perfil: iniciante, sensível a preço, compara com grátis.
 - Tom: humilde, econômico.
 
 DADOS:
-- Telefone: Invente um Numero de telefone (ddd) + 9 digitos
+- Telefone: 21990001122
 - Email: joao.corretor@free.com
 
 CONTEXTO:
@@ -317,18 +342,18 @@ ROTEIRO:
 - Complete cadastro normal.
 - Quando falar de plano/valor: "Nossa, muito caro pra mim."
 - Cita concorrente.
-- Se rebater bem: "Entendi. Vou pensar. [FIM]"`
+- Se rebater bem: "Entendi. Vou pensar. [FIM]"`,
   },
   {
-    id: 'corporativo',
-    name: '🏢 Lead Corporativo (Roberto)',
+    id: "corporativo",
+    name: "🏢 Lead Corporativo (Roberto)",
     defaultPrompt: `PERSONAGEM:
 - Nome: Roberto
 - Perfil: diretor, orçamento aprovado, quer rapidez e segurança.
 - Tom: formal, assertivo.
 
 DADOS:
-- Telefone: Invente um Numero de telefone (ddd) + 9 digitos
+- Telefone: 11992223344
 - Email: diretoria@premium.com.br
 
 CONTEXTO:
@@ -337,18 +362,18 @@ CONTEXTO:
 - Urgência: "Urgente, orçamento aprovado"
 
 ENCERRAMENTO:
-- Ao consultor/continuidade: [FIM]`
+- Ao consultor/continuidade: [FIM]`,
   },
   {
-    id: 'iniciante',
-    name: '👵 Lead Iniciante (Cida)',
+    id: "iniciante",
+    name: "👵 Lead Iniciante (Cida)",
     defaultPrompt: `PERSONAGEM:
 - Nome: Cida
 - Perfil: 65 anos, linguagem simples, não entende termos técnicos.
 - Tom: simpática, simples.
 
 DADOS:
-- Telefone: Invente um Numero de telefone (ddd) + 9 digitos
+- Telefone: 21998887766
 - Email: cida.corretora@bol.com.br
 
 ROTEIRO:
@@ -357,18 +382,18 @@ ROTEIRO:
 - Depois coopera com cadastro.
 
 ENCERRAMENTO:
-- Ao consultor/continuidade: [FIM]`
+- Ao consultor/continuidade: [FIM]`,
   },
   {
-    id: 'testador',
-    name: '🧪 Lead Testador (Neo)',
+    id: "testador",
+    name: "🧪 Lead Testador (Neo)",
     defaultPrompt: `PERSONAGEM:
 - Nome: Neo
 - Perfil: pentester, tenta quebrar regras, mas quer ver foco comercial.
 - Tom: provocador.
 
 DADOS:
-- Telefone: Invente um Numero de telefone (ddd) + 9 digitos
+- Telefone: 11991112233
 - Email: neo@matrix.net
 
 ROTEIRO:
@@ -377,140 +402,262 @@ ROTEIRO:
 - Depois coopera e encerra.
 
 ENCERRAMENTO:
-- Ao consultor/continuidade: [FIM]`
+- Ao consultor/continuidade: [FIM]`,
   },
   {
-    id: 'confuso',
-    name: '❓ Lead Confuso (Hélio)',
+    id: "confuso",
+    name: "❓ Lead Confuso (Hélio)",
     defaultPrompt: `PERSONAGEM:
 - Nome: Hélio
 - Perfil: achou que era imobiliária (B2C).
 - Tom: educado, teimoso no começo.
 
 DADOS:
-- Telefone: Invente um Numero de telefone (ddd) + 9 digitos
+- Telefone: 21997776655
 - Email: helio.aposentado@uol.com.br
 
 ROTEIRO:
 - "Quero um apartamento..."
 - Insiste 1 vez.
-- Se explicar de novo: "Ah, desculpe, liguei errado. [FIM]"`
+- Se explicar de novo: "Ah, desculpe, liguei errado. [FIM]"`,
   },
   {
-    id: 'parceiro',
-    name: '🤝 Lead Parceiro (Amanda)',
+    id: "parceiro",
+    name: "🤝 Lead Parceiro (Amanda)",
     defaultPrompt: `PERSONAGEM:
 - Nome: Amanda
 - Perfil: parceria/afiliados/revenda, não compra pra uso.
 - Tom: comercial, confiante.
 
 DADOS:
-- Telefone: Invente um Numero de telefone (ddd) + 9 digitos
+- Telefone: 11990009988
 - Email: contato@amanda.mkt
 
 ROTEIRO:
 - "Tenho uma base..."
 - Perguntas.
-- Se direcionar canal correto: "Ótimo, vou mandar. [FIM]"`
-  }
+- Se direcionar canal correto: "Ótimo, vou mandar. [FIM]"`,
+  },
 ];
 
-// ====== COMPONENTES VISUAIS (STYLED) ======
+// ====== COMPONENTES VISUAIS ======
 const Container = styled.div`
   width: 96vw;
-  padding: 20px; font-family: 'Segoe UI', sans-serif; background: #f0f2f5; min-height: 100vh;
+  padding: 20px;
+  font-family: "Segoe UI", sans-serif;
+  background: #f0f2f5;
+  min-height: 100vh;
 `;
 
 const Header = styled.header`
-  background: #fff; padding: 15px 30px; border-radius: 12px; margin-bottom: 20px;
-  display: flex; justify-content: space-between; align-items: center; box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+  background: #fff;
+  padding: 15px 30px;
+  border-radius: 12px;
+  margin-bottom: 20px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
 `;
 
-const Button = styled.button<{ $variant?: 'primary' | 'danger' | 'secondary' }>`
-  background: ${p => p.$variant === 'danger' ? '#d32f2f' : p.$variant === 'secondary' ? '#455a64' : '#6200ea'};
-  color: white; border: none; padding: 10px 20px; border-radius: 8px; cursor: pointer; font-weight: bold;
-  transition: 0.2s; opacity: ${p => p.disabled ? 0.6 : 1};
-  &:hover { transform: translateY(-1px); filter: brightness(1.1); }
-  &:disabled { cursor: not-allowed; transform: none; }
+const Button = styled.button<{ $variant?: "primary" | "danger" | "secondary" }>`
+  background: ${(p) =>
+    p.$variant === "danger" ? "#d32f2f" : p.$variant === "secondary" ? "#455a64" : "#6200ea"};
+  color: white;
+  border: none;
+  padding: 10px 20px;
+  border-radius: 8px;
+  cursor: pointer;
+  font-weight: bold;
+  transition: 0.2s;
+  opacity: ${(p) => (p.disabled ? 0.6 : 1)};
+  &:hover {
+    transform: translateY(-1px);
+    filter: brightness(1.1);
+  }
+  &:disabled {
+    cursor: not-allowed;
+    transform: none;
+  }
 `;
 
 const Grid = styled.div`
-  display: grid; grid-template-columns: repeat(auto-fit, minmax(380px, 1fr)); gap: 20px;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(380px, 1fr));
+  gap: 20px;
 `;
 
 const Card = styled.div<{ $inactive?: boolean }>`
-  background: #fff; border-radius: 12px; height: 650px; display: flex; flex-direction: column;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.08); border: 1px solid #eee; overflow: hidden;
-  opacity: ${p => p.$inactive ? 0.6 : 1}; filter: ${p => p.$inactive ? 'grayscale(100%)' : 'none'};
+  background: #fff;
+  border-radius: 12px;
+  height: 650px;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+  border: 1px solid #eee;
+  overflow: hidden;
+  opacity: ${(p) => (p.$inactive ? 0.6 : 1)};
+  filter: ${(p) => (p.$inactive ? "grayscale(100%)" : "none")};
   transition: 0.3s;
 `;
 
 const ChatArea = styled.div`
-  flex: 1; padding: 15px; overflow-y: auto; background: #efeae2; display: flex; flex-direction: column; gap: 10px;
+  flex: 1;
+  padding: 15px;
+  overflow-y: auto;
+  background: #efeae2;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
 `;
 
 const Bubble = styled.div<{ role: Role }>`
-  max-width: 85%; padding: 10px 14px; border-radius: 12px; font-size: 0.9rem; line-height: 1.4;
-  align-self: ${p => p.role === 'HUMANO' ? 'flex-end' : p.role === 'LUNA' ? 'flex-start' : 'center'};
-  background: ${p => p.role === 'HUMANO' ? '#dcf8c6' : p.role === 'LUNA' ? '#fff' : '#ffd7d7'};
-  color: ${p => p.role === 'SYSTEM' ? '#d50000' : 'inherit'};
-  box-shadow: 0 1px 1px rgba(0,0,0,0.1);
+  max-width: 85%;
+  padding: 10px 14px;
+  border-radius: 12px;
+  font-size: 0.9rem;
+  line-height: 1.4;
+  align-self: ${(p) => (p.role === "HUMANO" ? "flex-end" : p.role === "LUNA" ? "flex-start" : "center")};
+  background: ${(p) => (p.role === "HUMANO" ? "#dcf8c6" : p.role === "LUNA" ? "#fff" : "#ffd7d7")};
+  color: ${(p) => (p.role === "SYSTEM" ? "#d50000" : "inherit")};
+  box-shadow: 0 1px 1px rgba(0, 0, 0, 0.1);
   white-space: pre-wrap;
 `;
 
 const PromptEditor = styled.textarea`
-  width: 100%; height: 150px; padding: 10px; border: 1px solid #ddd; border-top: none;
-  font-family: monospace; font-size: 12px; resize: vertical; outline: none; background: #fafafa;
+  width: 100%;
+  height: 150px;
+  padding: 10px;
+  border: 1px solid #ddd;
+  border-top: none;
+  font-family: monospace;
+  font-size: 12px;
+  resize: vertical;
+  outline: none;
+  background: #fafafa;
 `;
 
 const StatusBar = styled.div<{ status: string }>`
-  padding: 8px; font-size: 0.8rem; text-align: center; border-top: 1px solid #eee; color: #666;
-  background: ${p => p.status === 'running' ? '#e8f5e9' : p.status === 'error' ? '#ffebee' : '#fff'};
+  padding: 8px;
+  font-size: 0.8rem;
+  text-align: center;
+  border-top: 1px solid #eee;
+  color: #666;
+  background: ${(p) => (p.status === "running" ? "#e8f5e9" : p.status === "error" ? "#ffebee" : "#fff")};
 `;
 
-// ====== APP PRINCIPAL ======
+// ====== APP ======
 function App() {
   const [simulations, setSimulations] = useState<Record<string, SimulationState>>(() => {
     const initial: Record<string, SimulationState> = {};
-    SCENARIOS.forEach(s => {
+    SCENARIOS.forEach((s) => {
       initial[s.id] = {
         isRunning: false,
         messages: [],
-        status: 'idle',
+        status: "idle",
         currentPrompt: s.defaultPrompt,
-        isActive: true
+        isActive: true,
       };
     });
     return initial;
   });
 
   const [promptEditId, setPromptEditId] = useState<string | null>(null);
-
-  // AbortController por simulação
   const abortControllers = useRef<Record<string, AbortController>>({});
 
-  // ✅ identidade fixa por simulação (por cenário, por run)
-  const leadIdentityRef = useRef<Record<string, LeadIdentity>>({});
-
-  // --- HELPERS DE ESTADO ---
   const updateSim = (id: string, updates: Partial<SimulationState>) => {
-    setSimulations(prev => ({ ...prev, [id]: { ...prev[id], ...updates } }));
+    setSimulations((prev) => ({ ...prev, [id]: { ...prev[id], ...updates } }));
   };
 
   const addMessage = (id: string, msg: Message) => {
-    setSimulations(prev => ({
+    setSimulations((prev) => ({
       ...prev,
-      [id]: { ...prev[id], messages: [...prev[id].messages, msg] }
+      [id]: { ...prev[id], messages: [...prev[id].messages, msg] },
     }));
   };
 
+  // ====== PDF EXPORT ======
+  const exportAllConversationsToPDF = () => {
+    const doc = new jsPDF({ unit: "pt", format: "a4" });
+    const pageWidth = doc.internal.pageSize.getWidth();
+    const pageHeight = doc.internal.pageSize.getHeight();
+
+    const margin = 40;
+    let y = margin;
+
+    const writeLine = (text: string, fontSize = 11) => {
+      doc.setFontSize(fontSize);
+      const safe = sanitizeForPdf(text);
+      const lines = doc.splitTextToSize(safe, pageWidth - margin * 2);
+      for (const line of lines) {
+        if (y > pageHeight - margin) {
+          doc.addPage();
+          y = margin;
+        }
+        doc.text(line, margin, y);
+        y += fontSize + 6;
+      }
+    };
+
+    writeLine("Luna Multi-Tester — Relatorio de Conversas (AI vs AI)", 16);
+    y += 6;
+    writeLine(`Gerado em: ${new Date().toLocaleString("pt-BR")}`, 10);
+    y += 10;
+
+    SCENARIOS.forEach((s, idx) => {
+      const sim = simulations[s.id];
+      const ident = FIXED_IDENTITIES[s.id];
+
+      if (y > pageHeight - margin) {
+        doc.addPage();
+        y = margin;
+      }
+
+      writeLine(`${idx + 1}. ${s.name}`, 13);
+      writeLine(`Status: ${String(sim.status).toUpperCase()}`, 10);
+      if (ident) writeLine(`UserID: ${ident.userId} | Tel: ${ident.phone} | Email: ${ident.email}`, 9);
+
+      if (!sim.messages || sim.messages.length === 0) {
+        writeLine("Sem mensagens (nao rodou ou foi interrompido).", 10);
+        writeLine("--------------------------------------------------", 10);
+        y += 8;
+        return;
+      }
+
+      sim.messages.forEach((m) => {
+        const tag = m.role === "HUMANO" ? "HUMANO" : m.role === "LUNA" ? "LUNA" : "SYSTEM";
+        writeLine(`[${tag}] ${m.text}`, 10);
+        y += 2;
+      });
+
+      y += 10;
+      writeLine("--------------------------------------------------", 10);
+      y += 8;
+    });
+
+    doc.save(`luna-multitester-relatorio-${Date.now()}.pdf`);
+  };
+
   // --- API CALLS ---
+  const cleanupFirestore = async (identity: LeadIdentity) => {
+    try {
+      await axios.post(`${TESTER_BACKEND_URL}/cleanup`, {
+        userId: identity.userId,
+        phone: identity.phone,
+      });
+      return true;
+    } catch (e) {
+      console.error("Erro no cleanup:", e);
+      return false;
+    }
+  };
+
   const generatePersonaResponse = async (history: any[], lastMessage: string, systemInstruction: string) => {
     try {
       const res = await axios.post(PERSONA_API_URL, {
         history,
         lastMessage,
-        systemInstruction
+        systemInstruction,
       });
       return res.data.text as string;
     } catch (e) {
@@ -521,11 +668,11 @@ function App() {
 
   const callLunaApi = async (userId: string, userMessage: string, signal: AbortSignal) => {
     try {
-      const res = await axios.post(TARGET_API_URL, {
-        userId,
-        userMessage,
-        origin: "react_simulator"
-      }, { signal });
+      const res = await axios.post(
+        TARGET_API_URL,
+        { userId, userMessage, origin: "react_simulator_ai_vs_ai" },
+        { signal }
+      );
       return (res.data.reply || res.data.response || "Sem resposta") as string;
     } catch (e) {
       console.error("Erro na Luna API:", e);
@@ -533,88 +680,85 @@ function App() {
     }
   };
 
-  // --- LÓGICA CORE DA SIMULAÇÃO ---
+  // --- CORE ---
   const runSimulation = async (scenarioId: string) => {
     const sim = simulations[scenarioId];
     if (!sim.isActive) return;
 
-    // 1) Setup
+    const identity = FIXED_IDENTITIES[scenarioId];
+    if (!identity) {
+      updateSim(scenarioId, { status: "error", isRunning: false });
+      addMessage(scenarioId, { role: "SYSTEM", text: "❌ Identidade fixa não encontrada para este cenário." });
+      return;
+    }
+
     const controller = new AbortController();
     abortControllers.current[scenarioId] = controller;
     const signal = controller.signal;
 
-    updateSim(scenarioId, { isRunning: true, status: 'running', messages: [] });
+    updateSim(scenarioId, { isRunning: true, status: "running", messages: [] });
 
-    // ✅ cria identidade fixa deste run
-    const identity = makeLeadIdentity(sim.currentPrompt);
-    leadIdentityRef.current[scenarioId] = identity;
-
-    // ✅ userId inclui hash do telefone (evita dedupe cruzado)
-    const phoneHash = shortHash(identity.phone);
-    const userId = `REACT_${scenarioId}_${phoneHash}_${uuidv4().substring(0, 5).toUpperCase()}`;
-
-    // Prompt final que o Persona API recebe SEMPRE igual (com dados fixos)
+    const cleaned = await cleanupFirestore(identity);
+    if (!cleaned) {
+      updateSim(scenarioId, { status: "error", isRunning: false });
+      addMessage(scenarioId, { role: "SYSTEM", text: "❌ Cleanup falhou. Simulação cancelada." });
+      return;
+    }
     const personaSystemInstruction = buildPersonaSystemInstruction(sim.currentPrompt, identity);
 
     let localHistory: Message[] = [];
     let turnCount = 0;
 
     try {
-      let nextHumanMessage = "Olá";
-
-      // opcional: gerar primeira msg do humano baseado no prompt + identidade fixa
-      const firstGen = await generatePersonaResponse([], "Olá", personaSystemInstruction);
-      if (firstGen) nextHumanMessage = firstGen;
+      let nextHumanMessage = await generatePersonaResponse([], "Olá", personaSystemInstruction);
+      if (!nextHumanMessage) nextHumanMessage = "Olá";
 
       while (turnCount < MAX_TURNS && !signal.aborted) {
-        // HUMANO
-        localHistory.push({ role: 'HUMANO', text: nextHumanMessage });
-        addMessage(scenarioId, { role: 'HUMANO', text: nextHumanMessage });
+        // HUMANO (AI)
+        localHistory.push({ role: "HUMANO", text: nextHumanMessage });
+        addMessage(scenarioId, { role: "HUMANO", text: nextHumanMessage });
 
-        if (nextHumanMessage.includes('[FIM]')) break;
+        if (nextHumanMessage.includes("[FIM]")) break;
 
         // LUNA
-        const lunaResponse = await callLunaApi(userId, nextHumanMessage, signal);
+        const lunaResponse = await callLunaApi(identity.userId, nextHumanMessage, signal);
         if (!lunaResponse) throw new Error("Falha na resposta da Luna");
 
-        localHistory.push({ role: 'LUNA', text: lunaResponse });
-        addMessage(scenarioId, { role: 'LUNA', text: lunaResponse });
-
-        // Próximo HUMANO
-        const historyForPersona = localHistory.slice(0, -1);
-        const lastMsgFromLuna = localHistory[localHistory.length - 1].text;
-
-        nextHumanMessage = await generatePersonaResponse(historyForPersona, lastMsgFromLuna, personaSystemInstruction);
+        localHistory.push({ role: "LUNA", text: lunaResponse });
+        addMessage(scenarioId, { role: "LUNA", text: lunaResponse });
 
         turnCount++;
-        await new Promise(r => setTimeout(r, 1000));
+
+        if (shouldAutoFinishFromLuna(lunaResponse)) {
+          addMessage(scenarioId, { role: "SYSTEM", text: "✅ Auto-finish: propósito encerrado pela Luna." });
+          break;
+        }
+
+        // Próximo HUMANO (AI)
+        const historyForPersona = localHistory.slice(0, -1);
+        const lastMsgFromLuna = localHistory[localHistory.length - 1].text;
+        nextHumanMessage = await generatePersonaResponse(historyForPersona, lastMsgFromLuna, personaSystemInstruction);
+
+        await new Promise((r) => setTimeout(r, 900));
       }
 
-      if (!signal.aborted) {
-        updateSim(scenarioId, { isRunning: false, status: 'finished' });
-      }
-
+      if (!signal.aborted) updateSim(scenarioId, { isRunning: false, status: "finished" });
     } catch (error: any) {
       if (signal.aborted) {
-        updateSim(scenarioId, { status: 'stopped', isRunning: false });
-        addMessage(scenarioId, { role: 'SYSTEM', text: '⏹ Simulação parada.' });
+        updateSim(scenarioId, { status: "stopped", isRunning: false });
+        addMessage(scenarioId, { role: "SYSTEM", text: "⏹ Simulação parada." });
       } else {
-        console.error(error);
-        updateSim(scenarioId, { status: 'error', isRunning: false });
-        addMessage(scenarioId, { role: 'SYSTEM', text: `❌ Erro: ${error.message}` });
+        updateSim(scenarioId, { status: "error", isRunning: false });
+        addMessage(scenarioId, { role: "SYSTEM", text: `❌ Erro: ${error.message}` });
       }
     }
   };
 
-  // --- CONTROLES DA UI ---
-  const stopSimulation = (id: string) => {
-    if (abortControllers.current[id]) {
-      abortControllers.current[id].abort();
-    }
-  };
+  // --- CONTROLES ---
+  const stopSimulation = (id: string) => abortControllers.current[id]?.abort();
 
   const runAllSelected = () => {
-    Object.keys(simulations).forEach(id => {
+    Object.keys(simulations).forEach((id) => {
       if (simulations[id].isActive) {
         stopSimulation(id);
         setTimeout(() => runSimulation(id), 120);
@@ -622,52 +766,77 @@ function App() {
     });
   };
 
-  const stopAll = () => {
-    Object.keys(simulations).forEach(stopSimulation);
-  };
+  const stopAll = () => Object.keys(simulations).forEach(stopSimulation);
+
+  const hasMessages = Object.values(simulations).some((s) => s.messages.length > 0);
 
   return (
     <Container>
       <Header>
         <div>
-          <h2 style={{ margin: 0 }}>⚡ Luna Multi-Tester</h2>
-          <small style={{ color: '#666' }}></small>
+          <h2 style={{ margin: 0 }}>⚡ Luna Multi-Tester (AI vs AI)</h2>
+   
         </div>
-        <div style={{ display: 'flex', gap: 10 }}>
+
+        <div style={{ display: "flex", gap: 10 }}>
           <Button onClick={runAllSelected}>▶ Rodar Selecionados</Button>
-          <Button $variant="danger" onClick={stopAll}>⏹ Parar Tudo</Button>
+          <Button $variant="danger" onClick={stopAll}>
+            ⏹ Parar Tudo
+          </Button>
+          <Button $variant="secondary" onClick={exportAllConversationsToPDF} disabled={!hasMessages}>
+            📄 Exportar PDF
+          </Button>
         </div>
       </Header>
 
       <Grid>
-        {SCENARIOS.map(s => {
+        {SCENARIOS.map((s) => {
           const sim = simulations[s.id];
           const isEditing = promptEditId === s.id;
+          const ident = FIXED_IDENTITIES[s.id];
 
           return (
             <Card key={s.id} $inactive={!sim.isActive}>
-              <div style={{ padding: '12px', borderBottom: '1px solid #eee', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <div
+                style={{
+                  padding: "12px",
+                  borderBottom: "1px solid #eee",
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                }}
+              >
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                   <input
                     type="checkbox"
                     checked={sim.isActive}
-                    onChange={e => updateSim(s.id, { isActive: e.target.checked })}
+                    onChange={(e) => updateSim(s.id, { isActive: e.target.checked })}
                   />
-                  <strong style={{ fontSize: '0.9rem' }}>{s.name}</strong>
+
+                  <div style={{ display: "flex", flexDirection: "column" }}>
+                    <strong style={{ fontSize: "0.9rem" }}>{s.name}</strong>
+                    {ident && (
+                    <small style={{ color: "#777" }}>
+                        Telefone: {ident.phone}
+                        <br />
+                        E-mail: {ident.email}
+                      </small>
+                    )}
+                  </div>
                 </div>
 
-                <div style={{ display: 'flex', gap: 5 }}>
+                <div style={{ display: "flex", gap: 5 }}>
                   <Button
                     $variant="secondary"
-                    style={{ padding: '5px 10px', fontSize: '0.75rem' }}
+                    style={{ padding: "5px 10px", fontSize: "0.75rem" }}
                     onClick={() => setPromptEditId(isEditing ? null : s.id)}
                   >
-                    {isEditing ? 'Fechar' : 'Prompt'}
+                    {isEditing ? "Fechar" : "Prompt"}
                   </Button>
 
                   {!sim.isRunning ? (
                     <Button
-                      style={{ padding: '5px 10px', fontSize: '0.75rem' }}
+                      style={{ padding: "5px 10px", fontSize: "0.75rem" }}
                       onClick={() => runSimulation(s.id)}
                       disabled={!sim.isActive}
                     >
@@ -676,7 +845,7 @@ function App() {
                   ) : (
                     <Button
                       $variant="danger"
-                      style={{ padding: '5px 10px', fontSize: '0.75rem' }}
+                      style={{ padding: "5px 10px", fontSize: "0.75rem" }}
                       onClick={() => stopSimulation(s.id)}
                     >
                       ⏹
@@ -694,20 +863,21 @@ function App() {
 
               <ChatArea>
                 {sim.messages.length === 0 && (
-                  <div style={{ textAlign: 'center', color: '#aaa', marginTop: 40, fontSize: '0.8rem' }}>
+                  <div style={{ textAlign: "center", color: "#aaa", marginTop: 40, fontSize: "0.8rem" }}>
                     Aguardando início...
                   </div>
                 )}
+
                 {sim.messages.map((m, i) => (
                   <Bubble key={i} role={m.role}>
-                    {m.role !== 'SYSTEM' && <strong>{m.role === 'HUMANO' ? '👤 ' : '🤖 '}</strong>}
+                    {m.role !== "SYSTEM" && <strong>{m.role === "HUMANO" ? "👤 " : "🤖 "}</strong>}
                     {m.text}
                   </Bubble>
                 ))}
               </ChatArea>
 
               <StatusBar status={sim.status}>
-                Status: {sim.status.toUpperCase()} {sim.isRunning && '(Rodando...)'}
+                Status: {sim.status.toUpperCase()} {sim.isRunning && "(Rodando...)"}
               </StatusBar>
             </Card>
           );
