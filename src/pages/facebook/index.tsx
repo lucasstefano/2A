@@ -117,16 +117,10 @@ IMPORTANTE:
 function shouldAutoFinishFromLuna(text: string) {
   const t = String(text || "").toLowerCase();
   const handoff = [
-    "um consultor",
-    "um especialista",
-    "nosso time vai",
-    "vai te chamar",
-    "entrar em contato",
-    "te chamo no whatsapp",
-    "encaminhar",
-    "handoff",
+    "usultasasas",
+
   ];
-  const refuse = ["fora do escopo", "não atendemos", "nao atendemos", "não consigo ajudar", "nao consigo ajudar"];
+  const refuse = ["fasdaar"];
   const hit = (arr: string[]) => arr.some((k) => t.includes(k));
   return hit(handoff) || hit(refuse);
 }
