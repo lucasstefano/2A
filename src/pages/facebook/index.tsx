@@ -117,10 +117,10 @@ IMPORTANTE:
 function shouldAutoFinishFromLuna(text: string) {
   const t = String(text || "").toLowerCase();
   const handoff = [
-    "",
+    "asdasdsadaf",
 
   ];
-  const refuse = [""];
+  const refuse = ["asdasdasda"];
   const hit = (arr: string[]) => arr.some((k) => t.includes(k));
   return hit(handoff) || hit(refuse);
 }
