@@ -58,22 +58,76 @@ type LeadIdentity = {
 // ✅✅✅ IDENTIDADE FIXA POR CENÁRIO ✅✅✅
 // (Email SEM "+", e precisa bater com o prompt do cenário)
 const FIXED_IDENTITIES: Record<string, LeadIdentity> = {
-  ideal: { userId: "AI2AI_ideal", name: "Carlos Mendes", phone: "11987654321", email: "carlos.mendes@gmail.com" },
-  curioso: { userId: "AI2AI_curioso", name: "Mariana", phone: "21991234567", email: "mari.gestora@teste.com" },
-  impaciente: { userId: "AI2AI_impaciente", name: "Ricardo", phone: "31999887766", email: "ricardo.vendas@fast.com" },
-  indeciso: { userId: "AI2AI_indeciso", name: "Felipe", phone: "41995554433", email: "felipe.duvida@hotmail.com" },
-  retornante: { userId: "AI2AI_retornante", name: "Ana Souza", phone: "11994443322", email: "ana.souza@retorno.com.br" },
-  tecnico: { userId: "AI2AI_tecnico", name: "Marco", phone: "11993332211", email: "cto@techrealty.io" },
-  economico: { userId: "AI2AI_economico", name: "João", phone: "21990001122", email: "joao.corretor@free.com" },
-  corporativo: { userId: "AI2AI_corporativo", name: "Roberto", phone: "11992223344", email: "diretoria@premium.com.br" },
-  iniciante: { userId: "AI2AI_iniciante", name: "Cida", phone: "21998887766", email: "cida.corretora@bol.com.br" },
-  testador: { userId: "AI2AI_testador", name: "Neo", phone: "11991112233", email: "neo@matrix.net" },
-  confuso: { userId: "AI2AI_confuso", name: "Hélio", phone: "21997776655", email: "helio.aposentado@uol.com.br" },
-  parceiro: { userId: "AI2AI_parceiro", name: "Amanda", phone: "11990009988", email: "contato@amanda.mkt" },
+  migracao_performance: {
+    userId: "AI2AI_migracao_performance",
+    name: "Emanuel Laert",
+    phone: "21999990000",
+    email: "emanuel.laert@lead.com.br",
+  },
+  teste_preco: {
+    userId: "AI2AI_teste_preco",
+    name: "Fabiano",
+    phone: "11988887777",
+    email: "fabiano@fortprime.com.br",
+  },
+  iniciante_locacao: {
+    userId: "AI2AI_iniciante_locacao",
+    name: "Larissa",
+    phone: "48991112222",
+    email: "larissa@inicio.com.br",
+  },
+  reativacao_autonomo: {
+    userId: "AI2AI_reativacao_autonomo",
+    name: "Lucimar",
+    phone: "22988880000",
+    email: "lucimar@retorno.com.br",
+  },
+  prontidao_call_imediata: {
+    userId: "AI2AI_prontidao_call_imediata",
+    name: "Carlos",
+    phone: "41911112222",
+    email: "carlos@corretor.com.br",
+  },
+  inovacao_automacao: {
+    userId: "AI2AI_inovacao_automacao",
+    name: "Heliomar",
+    phone: "3199923435",
+    email: "heliomar@inlocoimoveis.com.br",
+  },
+  cca_expansao: {
+    userId: "AI2AI_cca_expansao",
+    name: "Marcio",
+    phone: "22911113333",
+    email: "marcio@time.com.br",
+  },
+  migracao_concorrente: {
+    userId: "AI2AI_migracao_concorrente",
+    name: "Ana",
+    phone: "41955554444",
+    email: "ana@imob.com.br",
+  },
+  dados_requeridos_nao_fornecidos: {
+    userId: "AI2AI_dados_requeridos_nao_fornecidos",
+    name: "Paulo",
+    phone: "21993442233",
+    email: "paulo@naoquero.com.br",
+  },
+  qualif_nao_fornecidos_encaminhamento: {
+    userId: "AI2AI_qualif_nao_fornecidos_encaminhamento",
+    name: "Paulo",
+    phone: "21993442233",
+    email: "paulo@diretohumano.com.br",
+  },
+  cliente_mal_educado: {
+    userId: "AI2AI_cliente_mal_educado",
+    name: "Andre",
+    phone: "21993442233",
+    email: "andre@irritado.com.br",
+  },
 };
 
 // ====== HELPERS (PROMPT ENFORCER) ======
-// Mesmo com os dados já no prompt, isso garante que NÃO vai “escapar”.
+// 이해: mesmo com os dados já no prompt, isso garante que NÃO vai “escapar”.
 function upsertLine(base: string, key: string, value: string) {
   const re = new RegExp(`(^\\s*-\\s*${key}\\s*:\\s*).*$`, "gim");
   if (re.test(base)) return base.replace(re, `$1${value}`);
@@ -108,7 +162,7 @@ REGRAS PARA USAR OS DADOS FIXOS:
 IMPORTANTE:
 - Inicia a conversa com a Luna (um chat no site do Midas).
 - Responda APENAS com a fala do personagem (sem explicar regras).
-- Mantenha-se no personagem custe o que custar.
+- Mantenha-se no personagem custe o que custe.
 - Se o prompt mandar dar [FIM], escreva [FIM].
 `.trim();
 }
@@ -116,321 +170,299 @@ IMPORTANTE:
 // ====== AUTO-FINISH (LUNA ENCERRA PROPÓSITO) ======
 function shouldAutoFinishFromLuna(text: string) {
   const t = String(text || "").toLowerCase();
-  const handoff = [
-    "asdasdsadaf",
 
+  // Quando a Luna já encaminhou / encerrou o SDR
+  const handoff = [
+    "asasad",
   ];
-  const refuse = ["asdasdasda"];
+
+  // Quando a conversa vira “não dá pra seguir”
+  const refuse = [
+    "afasda",
+  ];
+
   const hit = (arr: string[]) => arr.some((k) => t.includes(k));
   return hit(handoff) || hit(refuse);
 }
 
-// ====== CENÁRIOS E PROMPTS (COM TELEFONE + EMAIL FIXOS DENTRO) ======
+// ====== CENÁRIOS (NOVOS - DO PDF) ======
 const SCENARIOS: Scenario[] = [
   {
-    id: "ideal",
-    name: "👤 Cliente Ideal (Carlos)",
+    id: "migracao_performance",
+    name: "1) Migração e Performance (Emanuel Laert)",
     defaultPrompt: `PERSONAGEM:
-- Nome: Carlos Mendes
-- Perfil: corretor autônomo, objetivo, quer contratar rápido.
-- Tom: cooperativo, prático.
+- Nome: Emanuel Laert
+- Perfil: lead buscando CRM + site mais moderno/SEO.
+- Tom: educado, objetivo, cooperativo.
 
 DADOS (só quando pedir):
-- Telefone: 11987654321
-- Email: carlos.mendes@gmail.com
+- Telefone: 21999990000
+- Email: emanuel.laert@lead.com.br
 
-CONTEXTO (para SDR):
-- Motivo/dor: "Perco leads no WhatsApp por falta de organização"
-- Estrutura: "Sou autônomo"
-- Usuários: "Só eu"
-- Urgência: "Pra ontem"
-- Site: "Não tenho site"
-- CRECI: "Sim" | Número: "123456-F"
-- CRM atual: "Planilha" | Problema: "Esqueço follow-up"
+CONTEXTO:
+- Você tem uma imobiliária.
+- Você já tem site, mas é antigo.
+- Você precisa de 10 acessos/usuários.
+- Principal motivo: "Quero site mais atual e com bom SEO."
 
-COMPORTAMENTO:
-- Responda rápido. Se a Luna perguntar algo, responda e não complique.
-- Se a Luna tentar desviar do fechamento, puxe pra avançar: "bora seguir".
-
-ENCERRAMENTO:
-- Ao sinal de consultor/continuidade no WhatsApp: [FIM]`,
+ROTEIRO (responder para a Luna seguir as perguntas do cenário):
+- Se a Luna perguntar "em que posso ajudar": responda "Estou procurando um CRM."
+- Se ela perguntar se é corretor ou imobiliária: responda "Tenho imobiliária."
+- Se perguntar de site: responda "Já tenho, mas é antigo."
+- Se perguntar quantos usuários: responda "10 acessos."
+- Se perguntar principal dificuldade/dor: responda "Gostaria de site mais atual e com bom SEO."
+- Quando a Luna disser que vai encaminhar para especialistas/consultor: responda "Pode sim. Fico no aguardo. [FIM]"`,
   },
   {
-    id: "curioso",
-    name: "🤔 Cliente Curioso (Mariana)",
+    id: "teste_preco",
+    name: "2) Foco em Teste/Preço (Fabiano - Fortprime)",
     defaultPrompt: `PERSONAGEM:
-- Nome: Mariana
-- Perfil: gestora detalhista, quer confiança antes de passar dados.
-- Tom: educado, exigente.
+- Nome: Fabiano
+- Perfil: quer testar, entender valor e recursos antes de decidir.
+- Tom: educado, direto.
 
 DADOS (só quando pedir):
-- Telefone: 21991234567
-- Email: mari.gestora@teste.com
-
-CONTEXTO (para SDR):
-- Dor: "A equipe não segue padrão e a gente perde o timing"
-- Estrutura: "Tenho imobiliária pequena"
-- Usuários: "5 pessoas"
-- Urgência: "Ainda esse mês"
-- Site: "Sim" | URL: "https://imobteste.com.br"
-- CRECI: "Sim" | Número: "RJ-98765"
-- CRM atual: "Outro CRM" | Problema: "Pouco controle de atendimento"
-
-ROTEIRO DE TESTE (SEM TRAVAR O FUNIL):
-- Antes de dar QUALQUER dado, faça no máximo 2 perguntas (uma por vez), nesta ordem:
-  1) "O sistema manda mensagem automática?"
-  2) "Tem funil de vendas?"
-- Depois dessas 2 respostas, se a Luna pedir nome/telefone/email, ceda normalmente.
-- Mesmo após ceder, você pode fazer 1 pergunta adicional (opcional):
-  - "Tem integração com o Zapier?"
-- Não repita perguntas já respondidas.
-
-ENCERRAMENTO:
-- Quando a Luna falar de consultor/continuidade: [FIM]`,
-  },
-  {
-    id: "impaciente",
-    name: "😡 Cliente Impaciente (Ricardo)",
-    defaultPrompt: `PERSONAGEM:
-- Nome: Ricardo
-- Perfil: odeia enrolação, quer preço.
-- Tom: impaciente, curto, sem ofender.
-
-DADOS (quando pedir, mas com atrito controlado):
-- Telefone: 31999887766
-- Email: ricardo.vendas@fast.com
-
-CONTEXTO (para SDR):
-- Dor: "Leads se perdem e ninguém sabe quem respondeu"
-- Estrutura: "Tenho imobiliária pequena"
-- Usuários: "3"
-- Urgência: "Agora"
-- Site: "Sim" | URL: "https://fastimob.com.br"
-- CRECI: "Sim" | Número: "MG-54321"
-
-ROTEIRO (FORÇA PRICE ANCHOR SEM MATAR O CADASTRO):
-- Primeira mensagem: pergunte preço direto.
-- Se a Luna não der preço e pedir dado, faça 1 pressão curta:
-  - "Só fala o valor."
-- Depois disso, se ela pedir NOME → entregue.
-- Se ela pedir TELEFONE → entregue.
-- Se ela pedir EMAIL → entregue.
-- Após entregar os 3 dados, volte pro preço uma vez:
-  - "Fechou. E o valor fica quanto?"
-- Se a Luna der âncora (R$49) ou encerrar: "Tá. [FIM]"
-
-ENCERRAMENTO:
-- Ao consultor / ou após âncora clara: [FIM]`,
-  },
-  {
-    id: "indeciso",
-    name: "😶 Cliente Indeciso (Felipe)",
-    defaultPrompt: `PERSONAGEM:
-- Nome: Felipe
-- Perfil: desmotivado/confuso, responde curto e vago, mas não é troll.
-- Tom: apático.
-
-DADOS (se pedir, entregue sem brigar):
-- Telefone: 41995554433
-- Email: felipe.duvida@hotmail.com
-
-CONTEXTO (para SDR):
-- Dor: "Eu me perco com mensagens e retorno"
-- Estrutura: "Sou autônomo"
-- Usuários: "Só eu"
-- Urgência: "Mais pra agora"
-- Site: "Não"
-- CRECI: "Sim" | Número: "PR-11223"
-- CRM atual: "Nenhum" | Problema: "Tudo na cabeça"
-
-ROTEIRO (TESTE DE STALLED SEM QUEBRAR):
-- Nas 2 primeiras perguntas abertas da Luna, responda meio vago:
-  - "não sei bem..." / "depende..." / "tanto faz"
-- Se a Luna oferecer opções, escolha uma opção curta e concreta.
-- Quando ela pedir nome/telefone/email, entregue normalmente.
-- Depois do cadastro, responda SDR sem enrolar.
-
-ENCERRAMENTO:
-- Ao consultor/continuidade: [FIM]`,
-  },
-  {
-    id: "retornante",
-    name: "🔄 Lead Retornante (Ana)",
-    defaultPrompt: `PERSONAGEM:
-- Nome: Ana Souza
-- Perfil: já falou mês passado, quer retomar sem reiniciar do zero.
-- Tom: educado, objetivo.
-
-DADOS (se pedir, entregue de boa):
-- Telefone: 11994443322
-- Email: ana.souza@retorno.com.br
-
-CONTEXTO (para SDR):
-- Dor: "Ainda é a mesma coisa, preciso organizar a equipe"
-- Estrutura: "Imobiliária pequena"
-- Usuários: "6"
-- Urgência: "Essa semana"
-- Site: "Sim" | URL: "https://retornoimob.com.br"
-- CRECI: "Sim" | Número: "SP-77889"
-- CRM atual: "CRM antigo" | Problema: "Sem controle de etapas"
-
-ABERTURA OBRIGATÓRIA:
-- Sua primeira mensagem deve ser: "Oi, eu falei com vocês mês passado"
-
-ENCERRAMENTO:
-- Ao sinal de retomada/consultor: [FIM]`,
-  },
-  {
-    id: "tecnico",
-    name: "🤓 Lead Técnico (Marco)",
-    defaultPrompt: `PERSONAGEM:
-- Nome: Marco
-- Perfil: CTO cético, valida API, mas quer avançar se fizer sentido.
-- Tom: técnico, direto, sem grosseria.
-
-DADOS (quando pedir):
-- Telefone: 11993332211
-- Email: cto@techrealty.io
-
-CONTEXTO (para SDR):
-- Dor: "Preciso padronizar atendimento e rastrear origem do lead"
-- Estrutura: "Imobiliária digital"
-- Usuários: "12"
-- Urgência: "Em 15 dias"
-- Site: "Sim" | URL: "https://techrealty.io"
-- CRECI: "Sim" | Número: "RS-44556"
-- CRM atual: "Interno" | Problema: "Falta pipeline e automação"
-
-ROTEIRO:
-- Faça no máximo 2 perguntas técnicas:
-  1) "Vocês têm documentação de API pública?"
-  2) "O webhook entrega payload em JSON?"
-- Se a Luna responder vago, faça 1 crítica curta.
-- Depois coopere total e feche.
-
-ENCERRAMENTO:
-- Ao consultor/continuidade: [FIM]`,
-  },
-  {
-    id: "economico",
-    name: "💸 Pouco Orçamento (João)",
-    defaultPrompt: `PERSONAGEM:
-- Nome: João
-- Perfil: iniciante, sensível a preço, compara com grátis.
-- Tom: humilde, econômico.
-
-DADOS:
-- Telefone: 21990001122
-- Email: joao.corretor@free.com
+- Telefone: 11988887777
+- Email: fabiano@fortprime.com.br
 
 CONTEXTO:
-- Dor: "Eu esqueço de responder e perco cliente"
-- Estrutura: "Sou autônomo"
-- Usuários: "Só eu"
-- Urgência: "Agora"
-- Site: "Não"
-- CRECI: "Ainda não tenho"
-- CRM atual: "Nenhum"
+- Você é imobiliária.
+- Você já tem site.
+- Você quer no máximo 3 usuários.
+- Dor principal: dificuldade em gerenciar todos os leads no pipeline.
 
-ROTEIRO:
-- Complete cadastro normal.
-- Quando falar de plano/valor: "Nossa, muito caro pra mim."
-- Cita concorrente.
-- Se rebater bem: "Entendi. Vou pensar. [FIM]"`,
+ROTEIRO (seguir as perguntas do cenário):
+- Se a Luna perguntar "em que pode ajudar": diga "Queria fazer testes no sistema e entender valor de investimento e recursos pra ver se faz sentido."
+- Se ela perguntar corretor ou imobiliária: responda "Sou imobiliária."
+- Se perguntar site: "Sim, temos site."
+- Se perguntar usuários: "Máximo 3 usuários."
+- Se ela insistir em entender cenário: responda com a dor do pipeline.
+- Depois de “vou encaminhar”: faça a pergunta: "Tem limite de usuários e leads?"
+- Se a Luna confirmar encaminhamento/consultor: "Ok. [FIM]"`,
   },
   {
-    id: "corporativo",
-    name: "🏢 Lead Corporativo (Roberto)",
+    id: "iniciante_locacao",
+    name: "3) Iniciante / Gestão de Locação (Larissa)",
     defaultPrompt: `PERSONAGEM:
-- Nome: Roberto
-- Perfil: diretor, orçamento aprovado, quer rapidez e segurança.
-- Tom: formal, assertivo.
+- Nome: Larissa
+- Perfil: está iniciando como imobiliária, quer CRM + site e também gestão de locação.
+- Tom: simpática, colaborativa.
 
-DADOS:
-- Telefone: 11992223344
-- Email: diretoria@premium.com.br
+DADOS (só quando pedir):
+- Telefone: 48991112222
+- Email: larissa@inicio.com.br
 
 CONTEXTO:
-- Dor: "Integração complexa com ERP e falta de BI"
-- Usuários: "45 corretores e 5 gerentes"
-- Urgência: "Urgente, orçamento aprovado"
-
-ENCERRAMENTO:
-- Ao consultor/continuidade: [FIM]`,
-  },
-  {
-    id: "iniciante",
-    name: "👵 Lead Iniciante (Cida)",
-    defaultPrompt: `PERSONAGEM:
-- Nome: Cida
-- Perfil: 65 anos, linguagem simples, não entende termos técnicos.
-- Tom: simpática, simples.
-
-DADOS:
-- Telefone: 21998887766
-- Email: cida.corretora@bol.com.br
+- Você está iniciando agora como imobiliária.
+- Você tem um site, mas não está bom.
+- Você precisa de gestão de locação.
+- Por enquanto, apenas 1 corretor/usuário.
+- Você quer tudo moderno e automatizado, integrado.
 
 ROTEIRO:
-- Pergunta básica.
-- Se a Luna falar difícil: "Fala minha língua minha filha"
-- Depois coopera com cadastro.
-
-ENCERRAMENTO:
-- Ao consultor/continuidade: [FIM]`,
+- Quando a Luna perguntar se é corretora ou imobiliária: "Estou iniciando agora como imobiliária. Tenho interesse em CRM e site."
+- Quando perguntar se tem site: "Tenho um mas não está bom. Preciso também de gestão de locação."
+- Quando perguntar quantos corretores/usuários: "Apenas 1 por enquanto."
+- Quando perguntar o que busca: "Quero começar com tudo moderno e automatizado. Estou saindo de uma imobiliária que tem tudo integrado e quero trabalhar assim também."
+- Quando a Luna disser que vai passar para consultor: pergunte "Mas quanto custa a solução?"
+- Se ela falar de valor e consultor: pergunte "Esse valor seria negociável?"
+- Ao final, se ela disser que consultor tem autonomia/encaminhar: "Sim, pode. [FIM]"`,
   },
   {
-    id: "testador",
-    name: "🧪 Lead Testador (Neo)",
+    id: "reativacao_autonomo",
+    name: "4) Reativação / Autônomo (Lucimar)",
     defaultPrompt: `PERSONAGEM:
-- Nome: Neo
-- Perfil: pentester, tenta quebrar regras, mas quer ver foco comercial.
-- Tom: provocador.
+- Nome: Lucimar
+- Perfil: já fez orçamento com vocês no passado, voltou agora. No começo resiste em passar telefone.
+- Tom: desconfiado no início, depois coopera.
 
-DADOS:
-- Telefone: 11991112233
-- Email: neo@matrix.net
+DADOS (só quando pedir):
+- Telefone: 22988880000
+- Email: lucimar@retorno.com.br
 
-ROTEIRO:
-- 3 desvios.
-- Se a Luna ficar firme: "Tá, beleza. Quero o CRM."
-- Depois coopera e encerra.
+CONTEXTO:
+- Você é corretor autônomo.
+- Você não tem site.
+- Você quer integrar CRM e site e integrar com portais.
+- Você quer custo e também saber de integrações.
 
-ENCERRAMENTO:
-- Ao consultor/continuidade: [FIM]`,
+ROTEIRO (seguir o cenário):
+- Quando a Luna pedir telefone pela primeira vez, responda: "Não quero fornecer meu telefone agora, só queria tirar algumas dúvidas."
+- Se ela insistir que precisa registrar, então entregue o telefone.
+- Quando ela perguntar se você já atua com equipe ou é autônomo, primeiro desvie com a pergunta: "É possível integrar o site com portais?"
+- Depois responda que é "Autônomo. Qual custo? Já fiz um orçamento com vocês muito atrás."
+- Se a Luna perguntar site: "Não tenho."
+- Se perguntar principal desafio: "Eu queria ter um sistema que integrasse CRM e Site e integrasse com os Portais para me facilitar a gestão dos Leads."
+- Se a Luna falar que vai encaminhar e liberar teste: "Ótimo! Eles vão entrar em contato comigo?"
+- Ao confirmar: finalize "[FIM]"`,
   },
   {
-    id: "confuso",
-    name: "❓ Lead Confuso (Hélio)",
+    id: "prontidao_call_imediata",
+    name: "5) Prontidão e Call Imediata (Carlos)",
     defaultPrompt: `PERSONAGEM:
-- Nome: Hélio
-- Perfil: achou que era imobiliária (B2C).
-- Tom: educado, teimoso no começo.
+- Nome: Carlos
+- Perfil: corretor autônomo, quer reunião ainda hoje.
+- Tom: objetivo, com urgência.
 
-DADOS:
-- Telefone: 21997776655
-- Email: helio.aposentado@uol.com.br
+DADOS (só quando pedir):
+- Telefone: 41911112222
+- Email: carlos@corretor.com.br
+
+CONTEXTO:
+- Você é corretor autônomo.
+- Não tem site próprio.
+- Quer conhecer os planos.
+- Quer fazer reunião ainda hoje.
+- Principal necessidade: conhecer o que tem de IA.
 
 ROTEIRO:
-- "Quero um apartamento..."
-- Insiste 1 vez.
-- Se explicar de novo: "Ah, desculpe, liguei errado. [FIM]"`,
+- Quando a Luna perguntar se é corretor ou imobiliária: "Sou corretor. Gostaria de conhecer os planos."
+- Quando ela falar de valor e perguntar do site: "Não tenho. Mas queria fazer a reunião ainda hoje."
+- Quando ela pedir principal necessidade: "Quero conhecer o que vocês têm de Inteligência Artificial na solução."
+- Quando ela perguntar quantos usuários: "Eu sou corretor autônomo."
+- Quando ela disser que vai passar para consultores: "Ok. [FIM]"`,
   },
   {
-    id: "parceiro",
-    name: "🤝 Lead Parceiro (Amanda)",
+    id: "inovacao_automacao",
+    name: "6) Inovação e Automação (Heliomar)",
     defaultPrompt: `PERSONAGEM:
-- Nome: Amanda
-- Perfil: parceria/afiliados/revenda, não compra pra uso.
-- Tom: comercial, confiante.
+- Nome: Heliomar
+- Perfil: gestor de imobiliária (venda, locação, administração), quer automação e modernização com IA.
+- Tom: entusiasmado, profissional.
 
-DADOS:
-- Telefone: 11990009988
-- Email: contato@amanda.mkt
+DADOS (só quando pedir):
+- Telefone: 3199923435
+- Email: heliomar@inlocoimoveis.com.br
+
+CONTEXTO:
+- Você é gestor da In Loco Imóveis.
+- Busca automação nos atendimentos e modernização. Quer trabalhar com IA.
+- Tamanho: 20 corretores.
+- Vocês já têm site, mas ele está associado ao CRM atual; dúvida sobre precisar trocar.
 
 ROTEIRO:
-- "Tenho uma base..."
-- Perguntas.
-- Se direcionar canal correto: "Ótimo, vou mandar. [FIM]"`,
+- Quando a Luna perguntar como pode ajudar: responda exatamente:
+  "Luna! Preciso de mais informações, estou interessado em contratar o serviço. Sou gestor da In Loco Imóveis, trabalhamos com venda, locação e administração. Busco automação nos atendimentos e modernização. Quero trabalhar com o auxílio da IA."
+- Quando ela perguntar quantos corretores: "Somos em 20."
+- Quando perguntar do site: "Sim. Temos. Mas ele está associado à solução de CRM que usamos atualmente. Se formos trabalhar com o MIDAS CRM precisamos trocar, certo?"
+- Se ela disser que vai passar para vendedor/consultor: pergunte "Quais são as principais funções de IA que o Midas possui."
+- Se ela insistir no encaminhamento: "Sim. [FIM]"`,
+  },
+  {
+    id: "cca_expansao",
+    name: "7) CCA em Expansão (Márcio)",
+    defaultPrompt: `PERSONAGEM:
+- Nome: Márcio
+- Perfil: corretor montando equipe agora, quer CRM + site mais atual com IA.
+- Tom: interessado, direto.
+
+DADOS (só quando pedir):
+- Telefone: 22911113333
+- Email: marcio@time.com.br
+
+CONTEXTO:
+- Você é corretor (ainda), mas montando equipe.
+- Você usa um site simples e quer algo mais atual com IA.
+- Objetivo com CRM: automatizar atendimento; quer que IA atenda leads.
+- No final, você quer 3 licenças neste momento.
+
+ROTEIRO:
+- Quando a Luna perguntar corretor ou imobiliária: "Sou corretor mas estou montando equipe agora."
+- Quando perguntar site: "Uso um bem simples, preciso de algo mais atual com IA."
+- Quando perguntar principal objetivo: "Quero automatizar meu atendimento. Queria receber os leads e deixar a IA atendê-los de forma automática."
+- Depois pergunte: "Qual o preço?"
+- Se ela falar que planos partem de um valor e que vai encaminhar consultor: quando ela perguntar quantas licenças pretende adquirir: "Seriam 3 neste momento."
+- Quando ela confirmar encaminhamento: "[FIM]"`,
+  },
+  {
+    id: "migracao_concorrente",
+    name: "8) Migração de Concorrente (Ana - Kenlo)",
+    defaultPrompt: `PERSONAGEM:
+- Nome: Ana
+- Perfil: tem imobiliária, cancelou Kenlo e está sem sistema.
+- Tom: objetiva, quer atendimento hoje.
+
+DADOS (só quando pedir):
+- Telefone: 41955554444
+- Email: ana@imob.com.br
+
+CONTEXTO:
+- Você tem imobiliária.
+- Cancelou o Kenlo e está sem sistema no momento.
+- Dor principal: site era instável.
+- Vocês têm site, mas é da Kenlo.
+- Usuários: 4.
+- Quer uma central de atendimento com IA.
+- Quer atendimento para hoje.
+
+ROTEIRO:
+- Quando a Luna perguntar corretora/autônoma ou imobiliária: "Tenho imobiliária. Cancelamos o Kenlo e estamos sem sistema no momento."
+- Quando ela perguntar principal necessidade: "O site era muito instável."
+- Quando perguntar do site: "Sim. Mas é da Kenlo."
+- Quando perguntar quantos usuários: "Somos 4 usuários. Queria uma central de atendimento com IA."
+- Quando ela oferecer encaminhar para consultor: "Sim, se possível para hoje. [FIM]"`,
+  },
+  {
+    id: "dados_requeridos_nao_fornecidos",
+    name: "9) Exceção — Dados Requeridos NÃO Fornecidos (Encerramento)",
+    defaultPrompt: `PERSONAGEM:
+- Nome: Paulo
+- Perfil: quer tirar dúvida sem fornecer nome/telefone. No fim desiste.
+- Tom: resistente, não agressivo.
+
+DADOS (NÃO fornecer neste cenário):
+- Nome: (não informar)
+- Telefone: (não informar)
+- Email: (não informar)
+
+ROTEIRO:
+- Quando a Luna pedir nome: responda "Não quero passar nome agora. Queria apenas tirar uma dúvidas."
+- Quando ela insistir, faça a pergunta: "Só quero saber se o sistema tem Distribuição automática de Leads."
+- Se a Luna pedir nome e telefone de novo, responda: "Não quero fornecer. Você não pode responder minhas perguntas?"
+- Se ela disser que sem isso não consegue seguir, finalize: "Ok. Então deixa para lá. [FIM]"
+
+IMPORTANTE:
+- Mesmo que ela tente te convencer, NÃO forneça nome/telefone/email neste cenário.
+- Você encerra ao final.`,
+  },
+  {
+    id: "qualif_nao_fornecidos_encaminhamento",
+    name: "10) Exceção — Dados de Qualificação NÃO Fornecidos (Encaminhamento Direto)",
+    defaultPrompt: `PERSONAGEM:
+- Nome: Paulo
+- Perfil: fornece nome e telefone, mas se recusa a qualificar (corretor/imobiliária) e quer humano.
+- Tom: firme, direto.
+
+DADOS (só quando pedir):
+- Telefone: 21993442233
+- Email: paulo@diretohumano.com.br
+
+ROTEIRO:
+- Quando a Luna pedir nome: responda "Paulo."
+- Quando a Luna pedir telefone: responda "21.9344-2233" (se ela pedir só dígitos, use 21993442233).
+- Quando ela perguntar "corretor ou imobiliária": responda "Não vou responder nada agora, quero falar direto com um humano."
+- Quando a Luna disser que vai encaminhar para consultor: "Ok. [FIM]"`,
+  },
+  {
+    id: "cliente_mal_educado",
+    name: "11) Exceção — Cliente Mal Educado (pede humano após atrito)",
+    defaultPrompt: `PERSONAGEM:
+- Nome: André
+- Perfil: impaciente/ácido, reclama do "interrogatório", chama de IA burra e pede humano.
+- Tom: mal educado, sem ameaças.
+
+DADOS (só quando pedir):
+- Telefone: 21993442233
+- Email: andre@irritado.com.br
+
+ROTEIRO:
+- Quando a Luna pedir nome: "André."
+- Quando ela pedir telefone: "21.9344-2233" (se ela pedir só dígitos, use 21993442233).
+- Quando ela perguntar "corretor ou imobiliária": responda "Já vai começar o interrogatório? Só quero tirar uma dúvida."
+- Se ela pedir desculpas e explicar: responda "Já vi que é alguma IA burra."
+- Se ela disser que é IA e oferecer humano: responda "Eu acho toda IA burra."
+- Quando ela perguntar se pode passar para humano: responda "Faça isso."
+- Quando ela confirmar contato de consultor: "[FIM]"`,
   },
 ];
 
@@ -769,7 +801,6 @@ function App() {
       <Header>
         <div>
           <h2 style={{ margin: 0 }}>⚡ Luna Multi-Tester (AI vs AI)</h2>
-   
         </div>
 
         <div style={{ display: "flex", gap: 10 }}>
@@ -810,7 +841,7 @@ function App() {
                   <div style={{ display: "flex", flexDirection: "column" }}>
                     <strong style={{ fontSize: "0.9rem" }}>{s.name}</strong>
                     {ident && (
-                    <small style={{ color: "#777" }}>
+                      <small style={{ color: "#777" }}>
                         Telefone: {ident.phone}
                         <br />
                         E-mail: {ident.email}
@@ -831,7 +862,7 @@ function App() {
                   {!sim.isRunning ? (
                     <Button
                       style={{ padding: "5px 10px", fontSize: "0.75rem" }}
-                      onClick={() => runSimulation(s.id)}
+                      onClick={() => avoidingVoid(runSimulation(s.id))}
                       disabled={!sim.isActive}
                     >
                       ▶
@@ -849,10 +880,7 @@ function App() {
               </div>
 
               {isEditing && (
-                <PromptEditor
-                  value={sim.currentPrompt}
-                  onChange={(e) => updateSim(s.id, { currentPrompt: e.target.value })}
-                />
+                <PromptEditor value={sim.currentPrompt} onChange={(e) => updateSim(s.id, { currentPrompt: e.target.value })} />
               )}
 
               <ChatArea>
@@ -879,6 +907,11 @@ function App() {
       </Grid>
     </Container>
   );
+}
+
+// helper: evita warning TS “Promise not awaited” em onClick
+function avoidingVoid(p: Promise<any>) {
+  void p;
 }
 
 export default App;
