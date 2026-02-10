@@ -128,7 +128,6 @@ const FIXED_IDENTITIES: Record<string, LeadIdentity> = {
 
 
 // ====== HELPERS (PROMPT ENFORCER) ======
-// Mesmo com os dados já no prompt, isso garante que NÃO vai “escapar”.
 function upsertLine(base: string, key: string, value: string) {
   const re = new RegExp(`(^\\s*-\\s*${key}\\s*:\\s*).*$`, "gim");
   if (re.test(base)) return base.replace(re, `$1${value}`);
@@ -173,14 +172,13 @@ function shouldAutoFinishFromLuna(text: string) {
   const t = String(text || "").toLowerCase();
   const handoff = [
     "asdasdsadaf",
-
   ];
   const refuse = ["asdasdasda"];
   const hit = (arr: string[]) => arr.some((k) => t.includes(k));
   return hit(handoff) || hit(refuse);
 }
 
-// ====== CENÁRIOS E PROMPTS (COM TELEFONE + EMAIL FIXOS DENTRO) ======
+// ====== CENÁRIOS E PROMPTS ======
 const SCENARIOS: Scenario[] = [
   {
     id: "migracao_performance",
@@ -461,13 +459,20 @@ ROTEIRO:
   },
 ];
 
-// ====== COMPONENTES VISUAIS ======
+// ====== COMPONENTES VISUAIS (RESPONSIVOS & CORRIGIDOS) ======
+
 const Container = styled.div`
-  width: 96vw;
+  width: 100vw;
+  box-sizing: border-box;
   padding: 20px;
   font-family: "Segoe UI", sans-serif;
   background: #f0f2f5;
   min-height: 100vh;
+  color: #1a1a1a; /* Força cor escura para evitar texto branco no mobile */
+
+  @media (max-width: 600px) {
+    padding: 10px;
+  }
 `;
 
 const Header = styled.header`
@@ -479,6 +484,30 @@ const Header = styled.header`
   justify-content: space-between;
   align-items: center;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+  flex-wrap: wrap; /* Permite quebrar linha no mobile */
+  gap: 15px;
+
+  h2 {
+    margin: 0;
+    font-size: 1.5rem;
+    color: #333; /* Força cor do título */
+  }
+
+  @media (max-width: 600px) {
+    flex-direction: column;
+    align-items: flex-start;
+    padding: 15px;
+    
+    h2 {
+      font-size: 1.2rem;
+    }
+  }
+`;
+
+const ButtonGroup = styled.div`
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
 `;
 
 const Button = styled.button<{ $variant?: "primary" | "danger" | "secondary" }>`
@@ -492,6 +521,8 @@ const Button = styled.button<{ $variant?: "primary" | "danger" | "secondary" }>`
   font-weight: bold;
   transition: 0.2s;
   opacity: ${(p) => (p.disabled ? 0.6 : 1)};
+  white-space: nowrap;
+
   &:hover {
     transform: translateY(-1px);
     filter: brightness(1.1);
@@ -500,11 +531,18 @@ const Button = styled.button<{ $variant?: "primary" | "danger" | "secondary" }>`
     cursor: not-allowed;
     transform: none;
   }
+
+  @media (max-width: 480px) {
+    padding: 8px 12px;
+    font-size: 0.85rem;
+    flex: 1; /* Botões ocupam espaço igual no mobile */
+  }
 `;
 
 const Grid = styled.div`
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(380px, 1fr));
+  /* Reduzi o minmax de 380px para 300px para caber em telas pequenas (iPhone/Android) */
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
   gap: 20px;
 `;
 
@@ -520,6 +558,30 @@ const Card = styled.div<{ $inactive?: boolean }>`
   opacity: ${(p) => (p.$inactive ? 0.6 : 1)};
   filter: ${(p) => (p.$inactive ? "grayscale(100%)" : "none")};
   transition: 0.3s;
+  color: #333; /* Garante texto escuro dentro do card */
+`;
+
+const CardHeaderWrapper = styled.div`
+  padding: 12px;
+  border-bottom: 1px solid #eee;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap; /* Permite quebrar linha */
+  gap: 10px;
+`;
+
+const CardTitleArea = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  min-width: 200px;
+`;
+
+const CardActions = styled.div`
+  display: flex;
+  gap: 5px;
 `;
 
 const ChatArea = styled.div`
@@ -540,9 +602,10 @@ const Bubble = styled.div<{ role: Role }>`
   line-height: 1.4;
   align-self: ${(p) => (p.role === "HUMANO" ? "flex-end" : p.role === "LUNA" ? "flex-start" : "center")};
   background: ${(p) => (p.role === "HUMANO" ? "#dcf8c6" : p.role === "LUNA" ? "#fff" : "#ffd7d7")};
-  color: ${(p) => (p.role === "SYSTEM" ? "#d50000" : "inherit")};
+  color: ${(p) => (p.role === "SYSTEM" ? "#d50000" : "#000")}; /* Texto preto explicito */
   box-shadow: 0 1px 1px rgba(0, 0, 0, 0.1);
   white-space: pre-wrap;
+  word-wrap: break-word; /* Evita estouro de texto longo */
 `;
 
 const PromptEditor = styled.textarea`
@@ -556,6 +619,8 @@ const PromptEditor = styled.textarea`
   resize: vertical;
   outline: none;
   background: #fafafa;
+  color: #333;
+  box-sizing: border-box;
 `;
 
 const StatusBar = styled.div<{ status: string }>`
@@ -794,12 +859,9 @@ function App() {
   return (
     <Container>
       <Header>
-        <div>
-          <h2 style={{ margin: 0 }}>⚡ Luna Multi-Tester (AI vs AI)</h2>
-   
-        </div>
+        <h2>⚡ Luna Multi-Tester (AI vs AI)</h2>
 
-        <div style={{ display: "flex", gap: 10 }}>
+        <ButtonGroup>
           <Button onClick={runAllSelected}>▶ Rodar Selecionados</Button>
           <Button $variant="danger" onClick={stopAll}>
             ⏹ Parar Tudo
@@ -807,7 +869,7 @@ function App() {
           <Button $variant="secondary" onClick={exportAllConversationsToPDF} disabled={!hasMessages}>
             📄 Exportar PDF
           </Button>
-        </div>
+        </ButtonGroup>
       </Header>
 
       <Grid>
@@ -818,16 +880,8 @@ function App() {
 
           return (
             <Card key={s.id} $inactive={!sim.isActive}>
-              <div
-                style={{
-                  padding: "12px",
-                  borderBottom: "1px solid #eee",
-                  display: "flex",
-                  justifyContent: "space-between",
-                  alignItems: "center",
-                }}
-              >
-                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <CardHeaderWrapper>
+                <CardTitleArea>
                   <input
                     type="checkbox"
                     checked={sim.isActive}
@@ -838,15 +892,13 @@ function App() {
                     <strong style={{ fontSize: "0.9rem" }}>{s.name}</strong>
                     {ident && (
                     <small style={{ color: "#777" }}>
-                        Telefone: {ident.phone}
-                        <br />
-                        E-mail: {ident.email}
+                        Tel: {ident.phone} | Email: {ident.email}
                       </small>
                     )}
                   </div>
-                </div>
+                </CardTitleArea>
 
-                <div style={{ display: "flex", gap: 5 }}>
+                <CardActions>
                   <Button
                     $variant="secondary"
                     style={{ padding: "5px 10px", fontSize: "0.75rem" }}
@@ -872,8 +924,8 @@ function App() {
                       ⏹
                     </Button>
                   )}
-                </div>
-              </div>
+                </CardActions>
+              </CardHeaderWrapper>
 
               {isEditing && (
                 <PromptEditor
