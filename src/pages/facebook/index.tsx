@@ -126,8 +126,9 @@ const FIXED_IDENTITIES: Record<string, LeadIdentity> = {
   },
 };
 
+
 // ====== HELPERS (PROMPT ENFORCER) ======
-// 이해: mesmo com os dados já no prompt, isso garante que NÃO vai “escapar”.
+// Mesmo com os dados já no prompt, isso garante que NÃO vai “escapar”.
 function upsertLine(base: string, key: string, value: string) {
   const re = new RegExp(`(^\\s*-\\s*${key}\\s*:\\s*).*$`, "gim");
   if (re.test(base)) return base.replace(re, `$1${value}`);
@@ -162,7 +163,7 @@ REGRAS PARA USAR OS DADOS FIXOS:
 IMPORTANTE:
 - Inicia a conversa com a Luna (um chat no site do Midas).
 - Responda APENAS com a fala do personagem (sem explicar regras).
-- Mantenha-se no personagem custe o que custe.
+- Mantenha-se no personagem custe o que custar.
 - Se o prompt mandar dar [FIM], escreva [FIM].
 `.trim();
 }
@@ -170,22 +171,16 @@ IMPORTANTE:
 // ====== AUTO-FINISH (LUNA ENCERRA PROPÓSITO) ======
 function shouldAutoFinishFromLuna(text: string) {
   const t = String(text || "").toLowerCase();
-
-  // Quando a Luna já encaminhou / encerrou o SDR
   const handoff = [
-    "asasad",
-  ];
+    "asdasdsadaf",
 
-  // Quando a conversa vira “não dá pra seguir”
-  const refuse = [
-    "afasda",
   ];
-
+  const refuse = ["asdasdasda"];
   const hit = (arr: string[]) => arr.some((k) => t.includes(k));
   return hit(handoff) || hit(refuse);
 }
 
-// ====== CENÁRIOS (NOVOS - DO PDF) ======
+// ====== CENÁRIOS E PROMPTS (COM TELEFONE + EMAIL FIXOS DENTRO) ======
 const SCENARIOS: Scenario[] = [
   {
     id: "migracao_performance",
@@ -801,6 +796,7 @@ function App() {
       <Header>
         <div>
           <h2 style={{ margin: 0 }}>⚡ Luna Multi-Tester (AI vs AI)</h2>
+   
         </div>
 
         <div style={{ display: "flex", gap: 10 }}>
@@ -841,7 +837,7 @@ function App() {
                   <div style={{ display: "flex", flexDirection: "column" }}>
                     <strong style={{ fontSize: "0.9rem" }}>{s.name}</strong>
                     {ident && (
-                      <small style={{ color: "#777" }}>
+                    <small style={{ color: "#777" }}>
                         Telefone: {ident.phone}
                         <br />
                         E-mail: {ident.email}
@@ -862,7 +858,7 @@ function App() {
                   {!sim.isRunning ? (
                     <Button
                       style={{ padding: "5px 10px", fontSize: "0.75rem" }}
-                      onClick={() => avoidingVoid(runSimulation(s.id))}
+                      onClick={() => runSimulation(s.id)}
                       disabled={!sim.isActive}
                     >
                       ▶
@@ -880,7 +876,10 @@ function App() {
               </div>
 
               {isEditing && (
-                <PromptEditor value={sim.currentPrompt} onChange={(e) => updateSim(s.id, { currentPrompt: e.target.value })} />
+                <PromptEditor
+                  value={sim.currentPrompt}
+                  onChange={(e) => updateSim(s.id, { currentPrompt: e.target.value })}
+                />
               )}
 
               <ChatArea>
@@ -907,11 +906,6 @@ function App() {
       </Grid>
     </Container>
   );
-}
-
-// helper: evita warning TS “Promise not awaited” em onClick
-function avoidingVoid(p: Promise<any>) {
-  void p;
 }
 
 export default App;
