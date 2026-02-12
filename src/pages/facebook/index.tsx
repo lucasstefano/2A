@@ -20,9 +20,6 @@ function sanitizeForPdf(input: string) {
 const PERSONA_API_URL = "https://persona-chat-773388175574.us-central1.run.app";
 const TARGET_API_URL = "https://luna-ai-chat-773388175574.us-central1.run.app";
 
-// ✅ backend que faz cleanup do Firestore
-const TESTER_BACKEND_URL = "https://midas-function-773388175574.us-central1.run.app";
-
 // Safety cap
 const MAX_TURNS = 20;
 
@@ -511,8 +508,15 @@ const ButtonGroup = styled.div`
 `;
 
 const Button = styled.button<{ $variant?: "primary" | "danger" | "secondary" }>`
-  background: ${(p) =>
-    p.$variant === "danger" ? "#d32f2f" : p.$variant === "secondary" ? "#455a64" : "#6200ea"};
+  background: ${(p) => {
+    const colors = {
+      danger: "#d32f2f",
+      secondary: "#455a64",
+      primary: "#6200ea"
+    };
+    return colors[p.$variant || "primary"];
+  }};
+  
   color: white;
   border: none;
   padding: 10px 20px;
@@ -527,6 +531,11 @@ const Button = styled.button<{ $variant?: "primary" | "danger" | "secondary" }>`
     transform: translateY(-1px);
     filter: brightness(1.1);
   }
+
+  &:not(:disabled):active {
+    transform: translateY(0);
+  }
+
   &:disabled {
     cursor: not-allowed;
     transform: none;
@@ -535,7 +544,7 @@ const Button = styled.button<{ $variant?: "primary" | "danger" | "secondary" }>`
   @media (max-width: 480px) {
     padding: 8px 12px;
     font-size: 0.85rem;
-    flex: 1; /* Botões ocupam espaço igual no mobile */
+    flex: 1;
   }
 `;
 
@@ -725,15 +734,14 @@ function App() {
   };
 
   // --- API CALLS ---
-  const cleanupFirestore = async (identity: LeadIdentity) => {
+  const cleanupFirestore = async () => {
     try {
-      await axios.post(`${TESTER_BACKEND_URL}/cleanup`, {
-        userId: identity.userId,
-        phone: identity.phone,
+      await axios.post("https://delete-luna-base-773388175574.us-central1.run.app", {
+        action: "delete_all"
       });
       return true;
     } catch (e) {
-      console.error("Erro no cleanup:", e);
+      console.error("Erro no cleanup do Firestore:", e);
       return false;
     }
   };
@@ -768,78 +776,82 @@ function App() {
 
   // --- CORE ---
   const runSimulation = async (scenarioId: string) => {
-    const sim = simulations[scenarioId];
-    if (!sim.isActive) return;
+      const sim = simulations[scenarioId];
+      if (!sim.isActive) return;
 
-    const identity = FIXED_IDENTITIES[scenarioId];
-    if (!identity) {
-      updateSim(scenarioId, { status: "error", isRunning: false });
-      addMessage(scenarioId, { role: "SYSTEM", text: "❌ Identidade fixa não encontrada para este cenário." });
-      return;
-    }
+      // 1. Limpa o banco antes de qualquer coisa
+      updateSim(scenarioId, { isRunning: true, status: "running", messages: [] });
+      addMessage(scenarioId, { role: "SYSTEM", text: "⏳ Limpando histórico do Firestore..." });
+      
+      const cleaned = await cleanupFirestore();
+      
+      if (!cleaned) {
+        updateSim(scenarioId, { status: "error", isRunning: false });
+        addMessage(scenarioId, { role: "SYSTEM", text: "❌ Cleanup falhou. A simulação pode conter lixo de conversas anteriores." });
+        // Opcional: retornar aqui se o cleanup for obrigatório
+      } else {
+        addMessage(scenarioId, { role: "SYSTEM", text: "✨ Firestore limpo. Iniciando..." });
+      }
 
-    const controller = new AbortController();
-    abortControllers.current[scenarioId] = controller;
-    const signal = controller.signal;
+      const identity = FIXED_IDENTITIES[scenarioId];
+      if (!identity) {
+        updateSim(scenarioId, { status: "error", isRunning: false });
+        addMessage(scenarioId, { role: "SYSTEM", text: "❌ Identidade fixa não encontrada." });
+        return;
+      }
 
-    updateSim(scenarioId, { isRunning: true, status: "running", messages: [] });
+      const controller = new AbortController();
+      abortControllers.current[scenarioId] = controller;
+      const signal = controller.signal;
 
-    const cleaned = await cleanupFirestore(identity);
-    if (!cleaned) {
-      updateSim(scenarioId, { status: "error", isRunning: false });
-      addMessage(scenarioId, { role: "SYSTEM", text: "❌ Cleanup falhou. Simulação cancelada." });
-      return;
-    }
-    const personaSystemInstruction = buildPersonaSystemInstruction(sim.currentPrompt, identity);
+      const personaSystemInstruction = buildPersonaSystemInstruction(sim.currentPrompt, identity);
+      let localHistory: Message[] = [];
+      let turnCount = 0;
 
-    let localHistory: Message[] = [];
-    let turnCount = 0;
+      try {
+        // Início da simulação real
+        let nextHumanMessage = await generatePersonaResponse([], "Olá", personaSystemInstruction);
+        if (!nextHumanMessage) nextHumanMessage = "Olá";
 
-    try {
-      let nextHumanMessage = await generatePersonaResponse([], "Olá", personaSystemInstruction);
-      if (!nextHumanMessage) nextHumanMessage = "Olá";
+        while (turnCount < MAX_TURNS && !signal.aborted) {
+          // HUMANO (AI)
+          localHistory.push({ role: "HUMANO", text: nextHumanMessage });
+          addMessage(scenarioId, { role: "HUMANO", text: nextHumanMessage });
 
-      while (turnCount < MAX_TURNS && !signal.aborted) {
-        // HUMANO (AI)
-        localHistory.push({ role: "HUMANO", text: nextHumanMessage });
-        addMessage(scenarioId, { role: "HUMANO", text: nextHumanMessage });
+          if (nextHumanMessage.includes("[FIM]")) break;
 
-        if (nextHumanMessage.includes("[FIM]")) break;
+          // LUNA
+          const lunaResponse = await callLunaApi(identity.userId, nextHumanMessage, signal);
+          if (!lunaResponse) throw new Error("Falha na resposta da Luna");
 
-        // LUNA
-        const lunaResponse = await callLunaApi(identity.userId, nextHumanMessage, signal);
-        if (!lunaResponse) throw new Error("Falha na resposta da Luna");
+          localHistory.push({ role: "LUNA", text: lunaResponse });
+          addMessage(scenarioId, { role: "LUNA", text: lunaResponse });
 
-        localHistory.push({ role: "LUNA", text: lunaResponse });
-        addMessage(scenarioId, { role: "LUNA", text: lunaResponse });
+          turnCount++;
 
-        turnCount++;
+          if (shouldAutoFinishFromLuna(lunaResponse)) {
+            addMessage(scenarioId, { role: "SYSTEM", text: "✅ Auto-finish: Luna encerrou o fluxo." });
+            break;
+          }
 
-        if (shouldAutoFinishFromLuna(lunaResponse)) {
-          addMessage(scenarioId, { role: "SYSTEM", text: "✅ Auto-finish: propósito encerrado pela Luna." });
-          break;
+          // Próximo HUMANO (AI)
+          const historyForPersona = localHistory.slice(0, -1);
+          const lastMsgFromLuna = localHistory[localHistory.length - 1].text;
+          nextHumanMessage = await generatePersonaResponse(historyForPersona, lastMsgFromLuna, personaSystemInstruction);
+
+          await new Promise((r) => setTimeout(r, 1000)); // Delay natural
         }
 
-        // Próximo HUMANO (AI)
-        const historyForPersona = localHistory.slice(0, -1);
-        const lastMsgFromLuna = localHistory[localHistory.length - 1].text;
-        nextHumanMessage = await generatePersonaResponse(historyForPersona, lastMsgFromLuna, personaSystemInstruction);
-
-        await new Promise((r) => setTimeout(r, 900));
+        if (!signal.aborted) updateSim(scenarioId, { isRunning: false, status: "finished" });
+      } catch (error: any) {
+        if (signal.aborted) {
+          updateSim(scenarioId, { status: "stopped", isRunning: false });
+        } else {
+          updateSim(scenarioId, { status: "error", isRunning: false });
+          addMessage(scenarioId, { role: "SYSTEM", text: `❌ Erro: ${error.message}` });
+        }
       }
-
-      if (!signal.aborted) updateSim(scenarioId, { isRunning: false, status: "finished" });
-    } catch (error: any) {
-      if (signal.aborted) {
-        updateSim(scenarioId, { status: "stopped", isRunning: false });
-        addMessage(scenarioId, { role: "SYSTEM", text: "⏹ Simulação parada." });
-      } else {
-        updateSim(scenarioId, { status: "error", isRunning: false });
-        addMessage(scenarioId, { role: "SYSTEM", text: `❌ Erro: ${error.message}` });
-      }
-    }
-  };
-
+    };
   // --- CONTROLES ---
   const stopSimulation = (id: string) => abortControllers.current[id]?.abort();
 
@@ -854,6 +866,20 @@ function App() {
 
   const stopAll = () => Object.keys(simulations).forEach(stopSimulation);
 
+
+const clea = async () => {
+  const confirm = window.confirm("Tem certeza que deseja limpar o banco de dados? Isso irá apagar todas as conversas e resultados anteriores.");
+  if (!confirm) return;
+
+  try {
+    const res = await cleanupFirestore();
+    if (res) {
+      alert("Banco de dados limpo com sucesso!");    }
+  } catch (e) {
+    alert("Erro ao limpar o banco de dados. Veja o console para detalhes.");
+  }
+};
+
   const hasMessages = Object.values(simulations).some((s) => s.messages.length > 0);
 
   return (
@@ -862,6 +888,7 @@ function App() {
         <h2>⚡ Luna Multi-Tester (AI vs AI)</h2>
 
         <ButtonGroup>
+       
           <Button onClick={runAllSelected}>▶ Rodar Selecionados</Button>
           <Button $variant="danger" onClick={stopAll}>
             ⏹ Parar Tudo
