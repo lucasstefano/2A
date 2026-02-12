@@ -867,18 +867,6 @@ function App() {
   const stopAll = () => Object.keys(simulations).forEach(stopSimulation);
 
 
-const clea = async () => {
-  const confirm = window.confirm("Tem certeza que deseja limpar o banco de dados? Isso irá apagar todas as conversas e resultados anteriores.");
-  if (!confirm) return;
-
-  try {
-    const res = await cleanupFirestore();
-    if (res) {
-      alert("Banco de dados limpo com sucesso!");    }
-  } catch (e) {
-    alert("Erro ao limpar o banco de dados. Veja o console para detalhes.");
-  }
-};
 
   const hasMessages = Object.values(simulations).some((s) => s.messages.length > 0);
 
