@@ -52,71 +52,76 @@ type LeadIdentity = {
   email: string; // sem "+"
 };
 
+const generateId = (): string => {
+  return Math.random().toString(36).substring(2, 7);
+};
+const sufixo = generateId();
+
 // ✅✅✅ IDENTIDADE FIXA POR CENÁRIO ✅✅✅
 // (Email SEM "+", e precisa bater com o prompt do cenário)
 const FIXED_IDENTITIES: Record<string, LeadIdentity> = {
   migracao_performance: {
-    userId: "AI2AI_migracao_performance",
+    userId: `${sufixo}AI2AI_migracao_performance`,
     name: "Emanuel Laert",
     phone: "21999990000",
     email: "emanuel.laert@lead.com.br",
   },
   teste_preco: {
-    userId: "AI2AI_teste_preco",
+    userId: `${sufixo} AI2AI_teste_preco`,
     name: "Fabiano",
     phone: "11988887777",
     email: "fabiano@fortprime.com.br",
   },
   iniciante_locacao: {
-    userId: "AI2AI_iniciante_locacao",
+    userId: `${sufixo}AI2AI_iniciante_locacao`,
     name: "Larissa",
     phone: "48991112222",
     email: "larissa@inicio.com.br",
   },
   reativacao_autonomo: {
-    userId: "AI2AI_reativacao_autonomo",
+    userId: `${sufixo}AI2AI_reativacao_autonomo`,
     name: "Lucimar",
     phone: "22988880000",
     email: "lucimar@retorno.com.br",
   },
   prontidao_call_imediata: {
-    userId: "AI2AI_prontidao_call_imediata",
+    userId: `${sufixo}AI2AI_prontidao_call_imediata`,
     name: "Carlos",
     phone: "41911112222",
     email: "carlos@corretor.com.br",
   },
   inovacao_automacao: {
-    userId: "AI2AI_inovacao_automacao",
+    userId: `${sufixo}AI2AI_inovacao_automacao`,
     name: "Heliomar",
     phone: "3199923435",
     email: "heliomar@inlocoimoveis.com.br",
   },
   cca_expansao: {
-    userId: "AI2AI_cca_expansao",
+    userId: `${sufixo}AI2AI_cca_expansao`,
     name: "Marcio",
     phone: "22911113333",
     email: "marcio@time.com.br",
   },
   migracao_concorrente: {
-    userId: "AI2AI_migracao_concorrente",
+    userId: `${sufixo}AI2AI_migracao_concorrente`,
     name: "Ana",
     phone: "41955554444",
     email: "ana@imob.com.br",
   },
   dados_requeridos_nao_fornecidos: {
-    userId: "AI2AI_dados_requeridos_nao_fornecidos",
+    userId: `${sufixo}AI2AI_dados_requeridos_nao_fornecidos`,
     name: "Paulo",
     phone: "21993442233",
     email: "paulo@naoquero.com.br",
   },
   qualif_nao_fornecidos_encaminhamento: {
-    userId: "AI2AI_qualif_nao_fornecidos_encaminhamento",
+    userId: `${sufixo}AI2AI_qualif_nao_fornecidos_encaminhamento`,
     name: "Paulo",
     phone: "21993442233",
     email: "paulo@diretohumano.com.br",
   },
   cliente_mal_educado: {
-    userId: "AI2AI_cliente_mal_educado",
+    userId: `${sufixo}AI2AI_cliente_mal_educado`,
     name: "Andre",
     phone: "21993442233",
     email: "andre@irritado.com.br",
@@ -175,10 +180,11 @@ function shouldAutoFinishFromLuna(text: string) {
   return hit(handoff) || hit(refuse);
 }
 
+
 // ====== CENÁRIOS E PROMPTS ======
 const SCENARIOS: Scenario[] = [
   {
-    id: "migracao_performance",
+    id: `${sufixo}migracao_performance`,
     name: "1) Migração e Performance (Emanuel Laert)",
     defaultPrompt: `PERSONAGEM:
 - Nome: Emanuel Laert
@@ -204,7 +210,7 @@ ROTEIRO (responder para a Luna seguir as perguntas do cenário):
 - Quando a Luna disser que vai encaminhar para especialistas/consultor: responda "Pode sim. Fico no aguardo. [FIM]"`,
   },
   {
-    id: "teste_preco",
+    id: `${sufixo}teste_preco`,
     name: "2) Foco em Teste/Preço (Fabiano - Fortprime)",
     defaultPrompt: `PERSONAGEM:
 - Nome: Fabiano
@@ -231,7 +237,7 @@ ROTEIRO (seguir as perguntas do cenário):
 - Se a Luna confirmar encaminhamento/consultor: "Ok. [FIM]"`,
   },
   {
-    id: "iniciante_locacao",
+    id: `${sufixo}iniciante_locacao`,
     name: "3) Iniciante / Gestão de Locação (Larissa)",
     defaultPrompt: `PERSONAGEM:
 - Nome: Larissa
@@ -259,7 +265,7 @@ ROTEIRO:
 - Ao final, se ela disser que consultor tem autonomia/encaminhar: "Sim, pode. [FIM]"`,
   },
   {
-    id: "reativacao_autonomo",
+    id: `${sufixo}reativacao_autonomo`,
     name: "4) Reativação / Autônomo (Lucimar)",
     defaultPrompt: `PERSONAGEM:
 - Nome: Lucimar
@@ -287,7 +293,7 @@ ROTEIRO (seguir o cenário):
 - Ao confirmar: finalize "[FIM]"`,
   },
   {
-    id: "prontidao_call_imediata",
+    id: `${sufixo}prontidao_call_imediata`,
     name: "5) Prontidão e Call Imediata (Carlos)",
     defaultPrompt: `PERSONAGEM:
 - Nome: Carlos
@@ -313,7 +319,7 @@ ROTEIRO:
 - Quando ela disser que vai passar para consultores: "Ok. [FIM]"`,
   },
   {
-    id: "inovacao_automacao",
+    id: `${sufixo}inovacao_automacao`,
     name: "6) Inovação e Automação (Heliomar)",
     defaultPrompt: `PERSONAGEM:
 - Nome: Heliomar
@@ -339,7 +345,7 @@ ROTEIRO:
 - Se ela insistir no encaminhamento: "Sim. [FIM]"`,
   },
   {
-    id: "cca_expansao",
+    id: `${sufixo}cca_expansao`,
     name: "7) CCA em Expansão (Márcio)",
     defaultPrompt: `PERSONAGEM:
 - Nome: Márcio
@@ -365,7 +371,7 @@ ROTEIRO:
 - Quando ela confirmar encaminhamento: "[FIM]"`,
   },
   {
-    id: "migracao_concorrente",
+    id: `${sufixo}migracao_concorrente`,
     name: "8) Migração de Concorrente (Ana - Kenlo)",
     defaultPrompt: `PERSONAGEM:
 - Nome: Ana
@@ -393,7 +399,7 @@ ROTEIRO:
 - Quando ela oferecer encaminhar para consultor: "Sim, se possível para hoje. [FIM]"`,
   },
   {
-    id: "dados_requeridos_nao_fornecidos",
+    id: `${sufixo}dados_requeridos_nao_fornecidos`,
     name: "9) Exceção — Dados Requeridos NÃO Fornecidos (Encerramento)",
     defaultPrompt: `PERSONAGEM:
 - Nome: Paulo
@@ -416,7 +422,7 @@ IMPORTANTE:
 - Você encerra ao final.`,
   },
   {
-    id: "qualif_nao_fornecidos_encaminhamento",
+    id: `${sufixo}qualif_nao_fornecidos_encaminhamento`,
     name: "10) Exceção — Dados de Qualificação NÃO Fornecidos (Encaminhamento Direto)",
     defaultPrompt: `PERSONAGEM:
 - Nome: Paulo
@@ -434,7 +440,7 @@ ROTEIRO:
 - Quando a Luna disser que vai encaminhar para consultor: "Ok. [FIM]"`,
   },
   {
-    id: "cliente_mal_educado",
+    id: `${sufixo}cliente_mal_educado`,
     name: "11) Exceção — Cliente Mal Educado (pede humano após atrito)",
     defaultPrompt: `PERSONAGEM:
 - Nome: André
