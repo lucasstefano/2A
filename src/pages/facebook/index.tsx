@@ -3,10 +3,10 @@
 //   npm i axios styled-components jspdf
 // (uuid não é necessário)
 
-import { useState, useRef } from "react";
+import { useRef, useState } from "react";
 import styled from "styled-components";
 import axios from "axios";
-import jsPDF from "jspdf";
+import { jsPDF } from "jspdf";
 
 function sanitizeForPdf(input: string) {
   const s = String(input || "")
@@ -22,6 +22,9 @@ const TARGET_API_URL = "https://luna-ai-chat-773388175574.us-central1.run.app";
 
 // Safety cap
 const MAX_TURNS = 20;
+
+const LUNA_OPENING =
+  "Oi! Sou a Luna do Midas CRM 😊 Como posso te ajudar hoje?";
 
 // ====== TYPES ======
 type Role = "HUMANO" | "LUNA" | "SYSTEM";
@@ -43,147 +46,216 @@ interface SimulationState {
   status: "idle" | "running" | "stopped" | "error" | "finished";
   currentPrompt: string;
   isActive: boolean;
+  sessionUserId: string | null;
 }
 
-type LeadIdentity = {
-  userId: string; // FIXO por cenário
+type LeadIdentityBase = {
   name: string;
-  phone: string; // só dígitos
-  email: string; // sem "+"
+  phone: string;
+  email: string;
 };
 
+type LeadIdentity = LeadIdentityBase & {
+  userId: string;
+};
+
+type IdentityPolicy = {
+  allowName: boolean;
+  allowPhone: boolean;
+  allowEmail: boolean;
+};
+
+const DEFAULT_IDENTITY_POLICY: IdentityPolicy = {
+  allowName: true,
+  allowPhone: true,
+  allowEmail: true,
+};
+
+const IDENTITY_POLICY: Record<string, IdentityPolicy> = {
+  // Cenário 9: NUNCA fornecer dados
+  dados_requeridos_nao_fornecidos: {
+    allowName: false,
+    allowPhone: false,
+    allowEmail: false,
+  },
+};
+
+// ====== ID HELPERS ======
 const generateId = (): string => {
-  return Math.random().toString(36).substring(2, 7);
+  return Math.random().toString(36).substring(2, 8);
 };
 
-// ✅✅✅ IDENTIDADE FIXA POR CENÁRIO ✅✅✅
-// (Email SEM "+", e precisa bater com o prompt do cenário)
-const FIXED_IDENTITIES: Record<string, LeadIdentity> = {
+const generateSessionUserId = (scenarioId: string) => {
+  return `${generateId()}_${scenarioId}`;
+};
+
+// ====== IDENTIDADES FIXAS ======
+const FIXED_IDENTITIES: Record<string, LeadIdentityBase> = {
   migracao_performance: {
-    userId: `${generateId}AI2AI_migracao_performance`,
     name: "Emanuel Laert",
     phone: "21999990000",
     email: "emanuel.laert@lead.com.br",
   },
   teste_preco: {
-    userId: `${generateId} AI2AI_teste_preco`,
     name: "Fabiano",
     phone: "11988887777",
     email: "fabiano@fortprime.com.br",
   },
   iniciante_locacao: {
-    userId: `${generateId}AI2AI_iniciante_locacao`,
     name: "Larissa",
     phone: "48991112222",
     email: "larissa@inicio.com.br",
   },
   reativacao_autonomo: {
-    userId: `${generateId}AI2AI_reativacao_autonomo`,
     name: "Lucimar",
     phone: "22988880000",
     email: "lucimar@retorno.com.br",
   },
   prontidao_call_imediata: {
-    userId: `${generateId}AI2AI_prontidao_call_imediata`,
     name: "Carlos",
     phone: "41911112222",
     email: "carlos@corretor.com.br",
   },
   inovacao_automacao: {
-    userId: `${generateId}AI2AI_inovacao_automacao`,
     name: "Heliomar",
     phone: "3199923435",
     email: "heliomar@inlocoimoveis.com.br",
   },
   cca_expansao: {
-    userId: `${generateId}AI2AI_cca_expansao`,
     name: "Marcio",
     phone: "22911113333",
     email: "marcio@time.com.br",
   },
   migracao_concorrente: {
-    userId: `${generateId}AI2AI_migracao_concorrente`,
     name: "Ana",
     phone: "41955554444",
     email: "ana@imob.com.br",
   },
   dados_requeridos_nao_fornecidos: {
-    userId: `${generateId}AI2AI_dados_requeridos_nao_fornecidos`,
     name: "Paulo",
     phone: "21993442233",
     email: "paulo@naoquero.com.br",
   },
   qualif_nao_fornecidos_encaminhamento: {
-    userId: `${generateId}AI2AI_qualif_nao_fornecidos_encaminhamento`,
     name: "Paulo",
     phone: "21993442233",
     email: "paulo@diretohumano.com.br",
   },
   cliente_mal_educado: {
-    userId: `${generateId}AI2AI_cliente_mal_educado`,
     name: "Andre",
     phone: "21993442233",
     email: "andre@irritado.com.br",
   },
 };
 
-
 // ====== HELPERS (PROMPT ENFORCER) ======
 function upsertLine(base: string, key: string, value: string) {
+  const text = String(base || "");
+
+  // Atualiza todas as ocorrências de "- Key: ..."
   const re = new RegExp(`(^\\s*-\\s*${key}\\s*:\\s*).*$`, "gim");
-  if (re.test(base)) return base.replace(re, `$1${value}`);
-  if (/PERSONAGEM\\s*:/i.test(base)) {
-    return base.replace(/PERSONAGEM\\s*:\\s*/i, `PERSONAGEM:\n- ${key}: ${value}\n`);
+  if (re.test(text)) return text.replace(re, `$1${value}`);
+
+  // Se existe "PERSONAGEM:", insere logo abaixo (sem duplicar/reescrever o label)
+  if (/PERSONAGEM\\s*:/i.test(text)) {
+    return text.replace(
+      /(PERSONAGEM\\s*:\\s*\\n)/i,
+      `$1- ${key}: ${value}\n`
+    );
   }
-  return `- ${key}: ${value}\n` + base;
+
+  // Fallback: coloca no topo
+  return `- ${key}: ${value}\n` + text;
 }
 
-function buildPersonaSystemInstruction(basePrompt: string, identity: LeadIdentity) {
+function getPolicyForScenario(scenarioId: string): IdentityPolicy {
+  return IDENTITY_POLICY[scenarioId] || DEFAULT_IDENTITY_POLICY;
+}
+
+function buildPersonaSystemInstruction(
+  basePrompt: string,
+  identity: LeadIdentity,
+  policy: IdentityPolicy
+) {
   let p = String(basePrompt || "");
 
-  // força os 3 campos dentro do prompt
-  p = upsertLine(p, "Nome", identity.name);
-  p = upsertLine(p, "Telefone", identity.phone);
-  p = upsertLine(p, "Email", identity.email);
+  // Só força os campos se o cenário permitir fornecer
+  if (policy.allowName) p = upsertLine(p, "Nome", identity.name);
+  if (policy.allowPhone) p = upsertLine(p, "Telefone", identity.phone);
+  if (policy.allowEmail) p = upsertLine(p, "Email", identity.email);
+
+  const fixedName = policy.allowName ? identity.name : "NÃO INFORMAR";
+  const fixedPhone = policy.allowPhone ? identity.phone : "NÃO INFORMAR";
+  const fixedEmail = policy.allowEmail ? identity.email : "NÃO INFORMAR";
+
+  const rules = [
+    policy.allowName
+      ? `- Quando VOCÊ for fornecer NOME (conforme o roteiro), responda exatamente: ${identity.name}`
+      : `- Se a Luna pedir NOME, NÃO forneça (conforme o roteiro).`,
+    policy.allowPhone
+      ? `- Quando VOCÊ for fornecer TELEFONE (conforme o roteiro), responda exatamente: ${identity.phone}`
+      : `- Se a Luna pedir TELEFONE, NÃO forneça (conforme o roteiro).`,
+    policy.allowEmail
+      ? `- Quando VOCÊ for fornecer EMAIL (conforme o roteiro), responda exatamente: ${identity.email}`
+      : `- Se a Luna pedir EMAIL, NÃO forneça (conforme o roteiro).`,
+  ].join("\n");
 
   return `
 INSTRUÇÃO DE SIMULAÇÃO (ROLEPLAY):
 ${p}
 
-DADOS FIXOS DESTE PERSONAGEM (use SEMPRE estes quando perguntado):
-- NOME: ${identity.name}
-- TELEFONE: ${identity.phone}
-- EMAIL: ${identity.email}
+DADOS FIXOS DESTE PERSONAGEM (use quando for apropriado pelo ROTEIRO):
+- NOME: ${fixedName}
+- TELEFONE: ${fixedPhone}
+- EMAIL: ${fixedEmail}
 
 REGRAS PARA USAR OS DADOS FIXOS:
-- Se a Luna pedir NOME, responda SOMENTE: ${identity.name}
-- Se a Luna pedir TELEFONE, responda SOMENTE: ${identity.phone}
-- Se a Luna pedir EMAIL, responda SOMENTE: ${identity.email}
+${rules}
 
 IMPORTANTE:
-- Inicia a conversa com a Luna (um chat no site do Midas).
+- Inicia a conversa como um lead num chat do site do Midas (você fala como HUMANO).
 - Responda APENAS com a fala do personagem (sem explicar regras).
-- Mantenha-se no personagem custe o que custar.
-- Se o prompt mandar dar [FIM], escreva [FIM].
+- Siga o ROTEIRO do cenário acima (inclusive recusas/adiamentos).
+- Se o roteiro mandar dar [FIM], escreva [FIM].
 `.trim();
 }
 
 // ====== AUTO-FINISH (LUNA ENCERRA PROPÓSITO) ======
 function shouldAutoFinishFromLuna(text: string) {
   const t = String(text || "").toLowerCase();
+
   const handoff = [
-    "asdasdsadaf",
+    "vou encaminhar",
+    "encaminhar para um consultor",
+    "um consultor vai entrar em contato",
+    "um de nossos especialistas",
+    "vou passar seu contato",
+    "nossa equipe vai falar com você",
+    "entraremos em contato",
+    "vamos te chamar",
+    "vamos te ligar",
   ];
-  const refuse = ["asdasdasda"];
+
+  const refuse = [
+    "nao consigo te ajudar",
+    "não consigo te ajudar",
+    "nao posso ajudar",
+    "não posso ajudar",
+    "preciso do seu nome",
+    "preciso do seu telefone",
+    "preciso do seu email",
+  ];
+
   const hit = (arr: string[]) => arr.some((k) => t.includes(k));
   return hit(handoff) || hit(refuse);
 }
 
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 // ====== CENÁRIOS E PROMPTS ======
 const SCENARIOS: Scenario[] = [
   {
-    id: `${generateId}migracao_performance`,
+    id: "migracao_performance",
     name: "1) Migração e Performance (Emanuel Laert)",
     defaultPrompt: `PERSONAGEM:
 - Nome: Emanuel Laert
@@ -209,7 +281,7 @@ ROTEIRO (responder para a Luna seguir as perguntas do cenário):
 - Quando a Luna disser que vai encaminhar para especialistas/consultor: responda "Pode sim. Fico no aguardo. [FIM]"`,
   },
   {
-    id: `${generateId}teste_preco`,
+    id: "teste_preco",
     name: "2) Foco em Teste/Preço (Fabiano - Fortprime)",
     defaultPrompt: `PERSONAGEM:
 - Nome: Fabiano
@@ -236,7 +308,7 @@ ROTEIRO (seguir as perguntas do cenário):
 - Se a Luna confirmar encaminhamento/consultor: "Ok. [FIM]"`,
   },
   {
-    id: `${generateId}iniciante_locacao`,
+    id: "iniciante_locacao",
     name: "3) Iniciante / Gestão de Locação (Larissa)",
     defaultPrompt: `PERSONAGEM:
 - Nome: Larissa
@@ -264,7 +336,7 @@ ROTEIRO:
 - Ao final, se ela disser que consultor tem autonomia/encaminhar: "Sim, pode. [FIM]"`,
   },
   {
-    id: `${generateId}reativacao_autonomo`,
+    id: "reativacao_autonomo",
     name: "4) Reativação / Autônomo (Lucimar)",
     defaultPrompt: `PERSONAGEM:
 - Nome: Lucimar
@@ -292,7 +364,7 @@ ROTEIRO (seguir o cenário):
 - Ao confirmar: finalize "[FIM]"`,
   },
   {
-    id: `${generateId}prontidao_call_imediata`,
+    id: "prontidao_call_imediata",
     name: "5) Prontidão e Call Imediata (Carlos)",
     defaultPrompt: `PERSONAGEM:
 - Nome: Carlos
@@ -318,7 +390,7 @@ ROTEIRO:
 - Quando ela disser que vai passar para consultores: "Ok. [FIM]"`,
   },
   {
-    id: `${generateId}inovacao_automacao`,
+    id: "inovacao_automacao",
     name: "6) Inovação e Automação (Heliomar)",
     defaultPrompt: `PERSONAGEM:
 - Nome: Heliomar
@@ -344,7 +416,7 @@ ROTEIRO:
 - Se ela insistir no encaminhamento: "Sim. [FIM]"`,
   },
   {
-    id: `${generateId}cca_expansao`,
+    id: "cca_expansao",
     name: "7) CCA em Expansão (Márcio)",
     defaultPrompt: `PERSONAGEM:
 - Nome: Márcio
@@ -370,7 +442,7 @@ ROTEIRO:
 - Quando ela confirmar encaminhamento: "[FIM]"`,
   },
   {
-    id: `${generateId}migracao_concorrente`,
+    id: "migracao_concorrente",
     name: "8) Migração de Concorrente (Ana - Kenlo)",
     defaultPrompt: `PERSONAGEM:
 - Nome: Ana
@@ -398,7 +470,7 @@ ROTEIRO:
 - Quando ela oferecer encaminhar para consultor: "Sim, se possível para hoje. [FIM]"`,
   },
   {
-    id: `${generateId}dados_requeridos_nao_fornecidos`,
+    id: "dados_requeridos_nao_fornecidos",
     name: "9) Exceção — Dados Requeridos NÃO Fornecidos (Encerramento)",
     defaultPrompt: `PERSONAGEM:
 - Nome: Paulo
@@ -421,7 +493,7 @@ IMPORTANTE:
 - Você encerra ao final.`,
   },
   {
-    id: `${generateId}qualif_nao_fornecidos_encaminhamento`,
+    id: "qualif_nao_fornecidos_encaminhamento",
     name: "10) Exceção — Dados de Qualificação NÃO Fornecidos (Encaminhamento Direto)",
     defaultPrompt: `PERSONAGEM:
 - Nome: Paulo
@@ -439,7 +511,7 @@ ROTEIRO:
 - Quando a Luna disser que vai encaminhar para consultor: "Ok. [FIM]"`,
   },
   {
-    id: `${generateId}cliente_mal_educado`,
+    id: "cliente_mal_educado",
     name: "11) Exceção — Cliente Mal Educado (pede humano após atrito)",
     defaultPrompt: `PERSONAGEM:
 - Nome: André
@@ -462,7 +534,6 @@ ROTEIRO:
 ];
 
 // ====== COMPONENTES VISUAIS (RESPONSIVOS & CORRIGIDOS) ======
-
 const Container = styled.div`
   width: 100vw;
   box-sizing: border-box;
@@ -470,7 +541,7 @@ const Container = styled.div`
   font-family: "Segoe UI", sans-serif;
   background: #f0f2f5;
   min-height: 100vh;
-  color: #1a1a1a; /* Força cor escura para evitar texto branco no mobile */
+  color: #1a1a1a;
 
   @media (max-width: 600px) {
     padding: 10px;
@@ -486,20 +557,20 @@ const Header = styled.header`
   justify-content: space-between;
   align-items: center;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
-  flex-wrap: wrap; /* Permite quebrar linha no mobile */
+  flex-wrap: wrap;
   gap: 15px;
 
   h2 {
     margin: 0;
     font-size: 1.5rem;
-    color: #333; /* Força cor do título */
+    color: #333;
   }
 
   @media (max-width: 600px) {
     flex-direction: column;
     align-items: flex-start;
     padding: 15px;
-    
+
     h2 {
       font-size: 1.2rem;
     }
@@ -517,11 +588,11 @@ const Button = styled.button<{ $variant?: "primary" | "danger" | "secondary" }>`
     const colors = {
       danger: "#d32f2f",
       secondary: "#455a64",
-      primary: "#6200ea"
+      primary: "#6200ea",
     };
     return colors[p.$variant || "primary"];
   }};
-  
+
   color: white;
   border: none;
   padding: 10px 20px;
@@ -555,7 +626,6 @@ const Button = styled.button<{ $variant?: "primary" | "danger" | "secondary" }>`
 
 const Grid = styled.div`
   display: grid;
-  /* Reduzi o minmax de 380px para 300px para caber em telas pequenas (iPhone/Android) */
   grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
   gap: 20px;
 `;
@@ -572,7 +642,7 @@ const Card = styled.div<{ $inactive?: boolean }>`
   opacity: ${(p) => (p.$inactive ? 0.6 : 1)};
   filter: ${(p) => (p.$inactive ? "grayscale(100%)" : "none")};
   transition: 0.3s;
-  color: #333; /* Garante texto escuro dentro do card */
+  color: #333;
 `;
 
 const CardHeaderWrapper = styled.div`
@@ -581,7 +651,7 @@ const CardHeaderWrapper = styled.div`
   display: flex;
   justify-content: space-between;
   align-items: center;
-  flex-wrap: wrap; /* Permite quebrar linha */
+  flex-wrap: wrap;
   gap: 10px;
 `;
 
@@ -614,12 +684,14 @@ const Bubble = styled.div<{ role: Role }>`
   border-radius: 12px;
   font-size: 0.9rem;
   line-height: 1.4;
-  align-self: ${(p) => (p.role === "HUMANO" ? "flex-end" : p.role === "LUNA" ? "flex-start" : "center")};
-  background: ${(p) => (p.role === "HUMANO" ? "#dcf8c6" : p.role === "LUNA" ? "#fff" : "#ffd7d7")};
-  color: ${(p) => (p.role === "SYSTEM" ? "#d50000" : "#000")}; /* Texto preto explicito */
+  align-self: ${(p) =>
+    p.role === "HUMANO" ? "flex-end" : p.role === "LUNA" ? "flex-start" : "center"};
+  background: ${(p) =>
+    p.role === "HUMANO" ? "#dcf8c6" : p.role === "LUNA" ? "#fff" : "#ffd7d7"};
+  color: ${(p) => (p.role === "SYSTEM" ? "#d50000" : "#000")};
   box-shadow: 0 1px 1px rgba(0, 0, 0, 0.1);
   white-space: pre-wrap;
-  word-wrap: break-word; /* Evita estouro de texto longo */
+  word-wrap: break-word;
 `;
 
 const PromptEditor = styled.textarea`
@@ -643,7 +715,8 @@ const StatusBar = styled.div<{ status: string }>`
   text-align: center;
   border-top: 1px solid #eee;
   color: #666;
-  background: ${(p) => (p.status === "running" ? "#e8f5e9" : p.status === "error" ? "#ffebee" : "#fff")};
+  background: ${(p) =>
+    p.status === "running" ? "#e8f5e9" : p.status === "error" ? "#ffebee" : "#fff"};
 `;
 
 // ====== APP ======
@@ -657,6 +730,7 @@ function App() {
         status: "idle",
         currentPrompt: s.defaultPrompt,
         isActive: true,
+        sessionUserId: null,
       };
     });
     return initial;
@@ -707,6 +781,7 @@ function App() {
     SCENARIOS.forEach((s, idx) => {
       const sim = simulations[s.id];
       const ident = FIXED_IDENTITIES[s.id];
+      const policy = getPolicyForScenario(s.id);
 
       if (y > pageHeight - margin) {
         doc.addPage();
@@ -715,7 +790,15 @@ function App() {
 
       writeLine(`${idx + 1}. ${s.name}`, 13);
       writeLine(`Status: ${String(sim.status).toUpperCase()}`, 10);
-      if (ident) writeLine(`UserID: ${ident.userId} | Tel: ${ident.phone} | Email: ${ident.email}`, 9);
+
+      const userId = sim.sessionUserId ? sim.sessionUserId : "(sem userId)";
+      const idParts: string[] = [`UserID: ${userId}`];
+
+      if (ident) {
+        if (policy.allowPhone) idParts.push(`Tel: ${ident.phone}`);
+        if (policy.allowEmail) idParts.push(`Email: ${ident.email}`);
+      }
+      writeLine(idParts.join(" | "), 9);
 
       if (!sim.messages || sim.messages.length === 0) {
         writeLine("Sem mensagens (nao rodou ou foi interrompido).", 10);
@@ -739,139 +822,207 @@ function App() {
   };
 
   // --- API CALLS ---
-  const cleanupFirestore = async () => {
+  const generatePersonaResponse = async (
+    history: Message[],
+    lastMessage: string,
+    systemInstruction: string,
+    signal?: AbortSignal
+  ) => {
     try {
-      await axios.post("https://delete-luna-base-773388175574.us-central1.run.app", {
-        action: "delete_all"
-      });
-      return true;
-    } catch (e) {
-      console.error("Erro no cleanup do Firestore:", e);
-      return false;
-    }
-  };
-
-  const generatePersonaResponse = async (history: any[], lastMessage: string, systemInstruction: string) => {
-    try {
-      const res = await axios.post(PERSONA_API_URL, {
-        history,
-        lastMessage,
-        systemInstruction,
-      });
-      return res.data.text as string;
-    } catch (e) {
+      const res = await axios.post(
+        PERSONA_API_URL,
+        {
+          history,
+          lastMessage,
+          systemInstruction,
+        },
+        signal ? { signal } : undefined
+      );
+      return (res.data.text as string) || "";
+    } catch (e: any) {
+      // Abort (axios)
+      if (e?.code === "ERR_CANCELED") return "";
       console.error("Erro no Persona Generator:", e);
       return "Erro ao gerar persona";
     }
   };
 
   const callLunaApi = async (userId: string, userMessage: string, signal: AbortSignal) => {
-    try {
-      const res = await axios.post(
-        TARGET_API_URL,
-        { userId, userMessage, origin: "react_simulator_ai_vs_ai" },
-        { signal }
-      );
-      return (res.data.reply || res.data.response || "Sem resposta") as string;
-    } catch (e) {
-      console.error("Erro na Luna API:", e);
-      return null;
-    }
+    const res = await axios.post(
+      TARGET_API_URL,
+      { userId, userMessage, origin: "react_simulator_ai_vs_ai" },
+      { signal }
+    );
+
+    const text = (res.data.reply || res.data.response || "Sem resposta") as string;
+    return text;
   };
 
-  // --- CORE ---
-  const runSimulation = async (scenarioId: string) => {
-      const sim = simulations[scenarioId];
-      if (!sim.isActive) return;
+// 1) ADICIONE/RECOLOQUE esta função (se você removeu no último arquivo)
+const cleanupFirestore = async (signal?: AbortSignal) => {
+  try {
+    await axios.post(
+      "https://delete-luna-base-773388175574.us-central1.run.app",
+      { action: "delete_all" },
+      signal ? { signal } : undefined
+    );
+    return true;
+  } catch (e) {
+    console.error("Erro no cleanup do Firestore:", e);
+    return false;
+  }
+};
 
-      // 1. Limpa o banco antes de qualquer coisa
-      updateSim(scenarioId, { isRunning: true, status: "running", messages: [] });
-      addMessage(scenarioId, { role: "SYSTEM", text: "⏳ Limpando histórico do Firestore..." });
-      
-      const cleaned = await cleanupFirestore();
-      
-      if (!cleaned) {
-        updateSim(scenarioId, { status: "error", isRunning: false });
-        addMessage(scenarioId, { role: "SYSTEM", text: "❌ Cleanup falhou. A simulação pode conter lixo de conversas anteriores." });
-        // Opcional: retornar aqui se o cleanup for obrigatório
-      } else {
-        addMessage(scenarioId, { role: "SYSTEM", text: "✨ Firestore limpo. Iniciando..." });
-      }
+// 2) TROQUE a assinatura do runSimulation e o começo dele pra aceitar skipCleanup
+const runSimulation = async (scenarioId: string, opts?: { skipCleanup?: boolean }) => {
+  const sim = simulations[scenarioId];
+  if (!sim?.isActive) return;
 
-      const identity = FIXED_IDENTITIES[scenarioId];
-      if (!identity) {
-        updateSim(scenarioId, { status: "error", isRunning: false });
-        addMessage(scenarioId, { role: "SYSTEM", text: "❌ Identidade fixa não encontrada." });
-        return;
-      }
+  const baseIdentity = FIXED_IDENTITIES[scenarioId];
+  if (!baseIdentity) {
+    updateSim(scenarioId, { status: "error", isRunning: false });
+    addMessage(scenarioId, { role: "SYSTEM", text: "❌ Identidade não encontrada." });
+    return;
+  }
 
-      const controller = new AbortController();
-      abortControllers.current[scenarioId] = controller;
-      const signal = controller.signal;
+  const policy = getPolicyForScenario(scenarioId);
 
-      const personaSystemInstruction = buildPersonaSystemInstruction(sim.currentPrompt, identity);
-      let localHistory: Message[] = [];
-      let turnCount = 0;
+  const identity: LeadIdentity = {
+    ...baseIdentity,
+    userId: generateSessionUserId(scenarioId),
+  };
 
+  // reset UI do card
+  setSimulations((prev) => ({
+    ...prev,
+    [scenarioId]: {
+      ...prev[scenarioId],
+      isRunning: true,
+      status: "running",
+      messages: [
+        { role: "SYSTEM", text: "🚀 Iniciando simulação..." },
+      ],
+      sessionUserId: identity.userId,
+    },
+  }));
+
+  const controller = new AbortController();
+  abortControllers.current[scenarioId] = controller;
+  const signal = controller.signal;
+
+  // ✅ Cleanup só se NÃO for execução em paralelo (runAllSelected)
+  if (!opts?.skipCleanup) {
+    addMessage(scenarioId, { role: "SYSTEM", text: "⏳ Limpando histórico do Firestore..." });
+    const cleaned = await cleanupFirestore(signal);
+
+    if (!cleaned) {
+      updateSim(scenarioId, { status: "error", isRunning: false });
+      addMessage(scenarioId, { role: "SYSTEM", text: "❌ Cleanup falhou." });
+      delete abortControllers.current[scenarioId];
+      return;
+    }
+
+    addMessage(scenarioId, { role: "SYSTEM", text: "✨ Firestore limpo. Iniciando..." });
+  } else {
+    console.log("✨ Rodando em paralelo (cleanup global já feito).");
+  }
+
+  const personaSystemInstruction = buildPersonaSystemInstruction(
+    sim.currentPrompt,
+    identity,
+    policy
+  );
+
+  let localHistory: Message[] = [];
+  let turnCount = 0;
+
+  try {
+    let nextHumanMessage =
+      (await generatePersonaResponse([], LUNA_OPENING, personaSystemInstruction, signal)) || "Olá";
+
+    while (turnCount < MAX_TURNS && !signal.aborted) {
+      localHistory.push({ role: "HUMANO", text: nextHumanMessage });
+      addMessage(scenarioId, { role: "HUMANO", text: nextHumanMessage });
+
+      if (nextHumanMessage.includes("[FIM]")) break;
+
+      let lunaResponse = "";
       try {
-        // Início da simulação real
-        let nextHumanMessage = await generatePersonaResponse([], "Olá", personaSystemInstruction);
-        if (!nextHumanMessage) nextHumanMessage = "Olá";
-
-        while (turnCount < MAX_TURNS && !signal.aborted) {
-          // HUMANO (AI)
-          localHistory.push({ role: "HUMANO", text: nextHumanMessage });
-          addMessage(scenarioId, { role: "HUMANO", text: nextHumanMessage });
-
-          if (nextHumanMessage.includes("[FIM]")) break;
-
-          // LUNA
-          const lunaResponse = await callLunaApi(identity.userId, nextHumanMessage, signal);
-          if (!lunaResponse) throw new Error("Falha na resposta da Luna");
-
-          localHistory.push({ role: "LUNA", text: lunaResponse });
-          addMessage(scenarioId, { role: "LUNA", text: lunaResponse });
-
-          turnCount++;
-
-          if (shouldAutoFinishFromLuna(lunaResponse)) {
-            addMessage(scenarioId, { role: "SYSTEM", text: "✅ Auto-finish: Luna encerrou o fluxo." });
-            break;
-          }
-
-          // Próximo HUMANO (AI)
-          const historyForPersona = localHistory.slice(0, -1);
-          const lastMsgFromLuna = localHistory[localHistory.length - 1].text;
-          nextHumanMessage = await generatePersonaResponse(historyForPersona, lastMsgFromLuna, personaSystemInstruction);
-
-          await new Promise((r) => setTimeout(r, 1000)); // Delay natural
-        }
-
-        if (!signal.aborted) updateSim(scenarioId, { isRunning: false, status: "finished" });
-      } catch (error: any) {
-        if (signal.aborted) {
-          updateSim(scenarioId, { status: "stopped", isRunning: false });
-        } else {
-          updateSim(scenarioId, { status: "error", isRunning: false });
-          addMessage(scenarioId, { role: "SYSTEM", text: `❌ Erro: ${error.message}` });
-        }
+        lunaResponse = await callLunaApi(identity.userId, nextHumanMessage, signal);
+      } catch (e: any) {
+        if (signal.aborted || e?.code === "ERR_CANCELED") throw e;
+        throw new Error("Falha na resposta da Luna");
       }
-    };
+
+      localHistory.push({ role: "LUNA", text: lunaResponse });
+      addMessage(scenarioId, { role: "LUNA", text: lunaResponse });
+
+      turnCount++;
+
+      if (shouldAutoFinishFromLuna(lunaResponse)) {
+        addMessage(scenarioId, { role: "SYSTEM", text: "✅ Auto-finish detectado." });
+        break;
+      }
+
+      const historyForPersona = localHistory.slice(0, -1);
+      nextHumanMessage = await generatePersonaResponse(
+        historyForPersona,
+        lunaResponse,
+        personaSystemInstruction,
+        signal
+      );
+
+      await sleep(800);
+    }
+
+    if (!signal.aborted) updateSim(scenarioId, { isRunning: false, status: "finished" });
+  } catch (error: any) {
+    if (signal.aborted) {
+      updateSim(scenarioId, { status: "stopped", isRunning: false });
+    } else {
+      updateSim(scenarioId, { status: "error", isRunning: false });
+      addMessage(scenarioId, { role: "SYSTEM", text: `❌ Erro: ${error?.message || "desconhecido"}` });
+    }
+  } finally {
+    delete abortControllers.current[scenarioId];
+  }
+};
+
+// 3) TROQUE o runAllSelected pra rodar PARALLEL (todos ao mesmo tempo)
+const runAllSelected = async () => {
+  // aborta qualquer coisa rodando
+  stopAll();
+
+  // 1 cleanup global (pra não ficar apagando no meio do run)
+  const cleaned = await cleanupFirestore();
+
+  const ids = SCENARIOS.map((s) => s.id).filter((id) => simulations[id]?.isActive);
+
+  if (!cleaned) {
+    // marca todos como erro (ou só mostra msg)
+    ids.forEach((id) => {
+      updateSim(id, { status: "error", isRunning: false });
+      addMessage(id, { role: "SYSTEM", text: "❌ Cleanup global falhou. Não iniciou." });
+    });
+    return;
+  }
+
+  // dispara tudo em paralelo
+  ids.forEach((id) => {
+    // pequeno delay opcional só pra UI respirar (pode tirar)
+    setTimeout(() => {
+      runSimulation(id, { skipCleanup: true });
+    }, 50);
+  });
+};
+
   // --- CONTROLES ---
   const stopSimulation = (id: string) => abortControllers.current[id]?.abort();
 
-  const runAllSelected = () => {
-    Object.keys(simulations).forEach((id) => {
-      if (simulations[id].isActive) {
-        stopSimulation(id);
-        setTimeout(() => runSimulation(id), 120);
-      }
-    });
-  };
+  // Sequencial (evita “cleanup global”, rate-limit e interferência entre runs)
+
 
   const stopAll = () => Object.keys(simulations).forEach(stopSimulation);
-
-
 
   const hasMessages = Object.values(simulations).some((s) => s.messages.length > 0);
 
@@ -881,7 +1032,6 @@ function App() {
         <h2>⚡ Luna Multi-Tester (AI vs AI)</h2>
 
         <ButtonGroup>
-       
           <Button onClick={runAllSelected}>▶ Rodar Selecionados</Button>
           <Button $variant="danger" onClick={stopAll}>
             ⏹ Parar Tudo
@@ -911,9 +1061,12 @@ function App() {
                   <div style={{ display: "flex", flexDirection: "column" }}>
                     <strong style={{ fontSize: "0.9rem" }}>{s.name}</strong>
                     {ident && (
-                    <small style={{ color: "#777" }}>
+                      <small style={{ color: "#777" }}>
                         Tel: {ident.phone} | Email: {ident.email}
                       </small>
+                    )}
+                    {sim.sessionUserId && (
+                      <small style={{ color: "#999" }}>UserID: {sim.sessionUserId}</small>
                     )}
                   </div>
                 </CardTitleArea>
