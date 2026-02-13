@@ -1,12 +1,38 @@
-// App.tsx (COMPLETO) ✅
 // Reqs:
-//   npm i axios styled-components jspdf
+//   npm i axios styled-components jspdf firebase
 // (uuid não é necessário)
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import styled from "styled-components";
 import axios from "axios";
 import { jsPDF } from "jspdf";
+
+// ====== FIREBASE IMPORTS ======
+import { initializeApp } from "firebase/app";
+import { 
+  getFirestore, 
+  doc, 
+  getDoc, 
+  setDoc, 
+  updateDoc 
+} from "firebase/firestore";
+
+// ====== CONFIGURAÇÃO DO FIREBASE (PREENCHA AQUI) ======
+const firebaseConfig = {
+ apiKey: "AIzaSyAL5g3tgUjcVdFZzmvC43zYuyBv0EkY5ak",
+  authDomain: "luna-481514.firebaseapp.com",
+  projectId: "luna-481514",
+  storageBucket: "luna-481514.firebasestorage.app",
+  messagingSenderId: "773388175574",
+  appId: "1:773388175574:web:7945a982932dd3060ce177"
+};
+
+// Inicializa Firebase apenas se houver config (evita erro se não preencher)
+const app = initializeApp(firebaseConfig);
+const db = getFirestore(app);
+
+// Coleção onde os prompts serão salvos
+const PROMPTS_COLLECTION = "scenario_prompts";
 
 function sanitizeForPdf(input: string) {
   const s = String(input || "")
@@ -16,7 +42,7 @@ function sanitizeForPdf(input: string) {
   return s.replace(/[^\x20-\x7E]/g, "");
 }
 
-// ====== CONFIGURAÇÕES ======
+// ====== CONFIGURAÇÕES GERAIS ======
 const PERSONA_API_URL = "https://persona-chat-773388175574.us-central1.run.app";
 const TARGET_API_URL = "https://luna-ai-chat-773388175574.us-central1.run.app";
 
@@ -37,7 +63,7 @@ interface Message {
 interface Scenario {
   id: string;
   name: string;
-  defaultPrompt: string;
+  defaultPrompt: string; // O "default" hardcoded, usado como fallback/seed
 }
 
 interface SimulationState {
@@ -47,6 +73,7 @@ interface SimulationState {
   currentPrompt: string;
   isActive: boolean;
   sessionUserId: string | null;
+  isSaving?: boolean; // Controle de UI para o salvamento
 }
 
 type LeadIdentityBase = {
@@ -151,20 +178,15 @@ const FIXED_IDENTITIES: Record<string, LeadIdentityBase> = {
 // ====== HELPERS (PROMPT ENFORCER) ======
 function upsertLine(base: string, key: string, value: string) {
   const text = String(base || "");
-
-  // Atualiza todas as ocorrências de "- Key: ..."
   const re = new RegExp(`(^\\s*-\\s*${key}\\s*:\\s*).*$`, "gim");
   if (re.test(text)) return text.replace(re, `$1${value}`);
 
-  // Se existe "PERSONAGEM:", insere logo abaixo (sem duplicar/reescrever o label)
   if (/PERSONAGEM\\s*:/i.test(text)) {
     return text.replace(
       /(PERSONAGEM\\s*:\\s*\\n)/i,
       `$1- ${key}: ${value}\n`
     );
   }
-
-  // Fallback: coloca no topo
   return `- ${key}: ${value}\n` + text;
 }
 
@@ -179,7 +201,6 @@ function buildPersonaSystemInstruction(
 ) {
   let p = String(basePrompt || "");
 
-  // Só força os campos se o cenário permitir fornecer
   if (policy.allowName) p = upsertLine(p, "Nome", identity.name);
   if (policy.allowPhone) p = upsertLine(p, "Telefone", identity.phone);
   if (policy.allowEmail) p = upsertLine(p, "Email", identity.email);
@@ -223,7 +244,6 @@ IMPORTANTE:
 // ====== AUTO-FINISH (LUNA ENCERRA PROPÓSITO) ======
 function shouldAutoFinishFromLuna(text: string) {
   const t = String(text || "").toLowerCase();
-
   const handoff = [
     "vou encaminhar",
     "encaminhar para um consultor",
@@ -235,7 +255,6 @@ function shouldAutoFinishFromLuna(text: string) {
     "vamos te chamar",
     "vamos te ligar",
   ];
-
   const refuse = [
     "nao consigo te ajudar",
     "não consigo te ajudar",
@@ -245,14 +264,14 @@ function shouldAutoFinishFromLuna(text: string) {
     "preciso do seu telefone",
     "preciso do seu email",
   ];
-
   const hit = (arr: string[]) => arr.some((k) => t.includes(k));
   return hit(handoff) || hit(refuse);
 }
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-// ====== CENÁRIOS E PROMPTS ======
+// ====== CENÁRIOS E PROMPTS DEFAULTS (BLUEPRINT) ======
+// Esses valores servem para popular o banco na primeira vez
 const SCENARIOS: Scenario[] = [
   {
     id: "migracao_performance",
@@ -583,12 +602,13 @@ const ButtonGroup = styled.div`
   flex-wrap: wrap;
 `;
 
-const Button = styled.button<{ $variant?: "primary" | "danger" | "secondary" }>`
+const Button = styled.button<{ $variant?: "primary" | "danger" | "secondary" | "success" }>`
   background: ${(p) => {
     const colors = {
       danger: "#d32f2f",
       secondary: "#455a64",
       primary: "#6200ea",
+      success: "#2e7d32",
     };
     return colors[p.$variant || "primary"];
   }};
@@ -694,12 +714,17 @@ const Bubble = styled.div<{ role: Role }>`
   word-wrap: break-word;
 `;
 
+const PromptEditorContainer = styled.div`
+  display: flex;
+  flex-direction: column;
+  border-bottom: 1px solid #ddd;
+`;
+
 const PromptEditor = styled.textarea`
   width: 100%;
-  height: 150px;
+  height: 120px;
   padding: 10px;
-  border: 1px solid #ddd;
-  border-top: none;
+  border: none;
   font-family: monospace;
   font-size: 12px;
   resize: vertical;
@@ -707,6 +732,14 @@ const PromptEditor = styled.textarea`
   background: #fafafa;
   color: #333;
   box-sizing: border-box;
+`;
+
+const PromptToolbar = styled.div`
+  padding: 5px;
+  background: #f1f1f1;
+  display: flex;
+  justify-content: flex-end;
+  gap: 5px;
 `;
 
 const StatusBar = styled.div<{ status: string }>`
@@ -721,23 +754,84 @@ const StatusBar = styled.div<{ status: string }>`
 
 // ====== APP ======
 function App() {
-  const [simulations, setSimulations] = useState<Record<string, SimulationState>>(() => {
-    const initial: Record<string, SimulationState> = {};
-    SCENARIOS.forEach((s) => {
-      initial[s.id] = {
-        isRunning: false,
-        messages: [],
-        status: "idle",
-        currentPrompt: s.defaultPrompt,
-        isActive: true,
-        sessionUserId: null,
-      };
-    });
-    return initial;
-  });
+  // Inicializa vazio ou com loading
+  const [loadingPrompts, setLoadingPrompts] = useState(true);
+  const [simulations, setSimulations] = useState<Record<string, SimulationState>>({});
 
   const [promptEditId, setPromptEditId] = useState<string | null>(null);
   const abortControllers = useRef<Record<string, AbortController>>({});
+
+  // ====== SYNC FIREBASE ON MOUNT ======
+  useEffect(() => {
+    const syncPrompts = async () => {
+      try {
+        const initialState: Record<string, SimulationState> = {};
+        
+        // 1. Tentar ler todos os prompts existentes no Firestore
+        // (Isso assume que 'db' já está inicializado)
+        // Como o Firebase v9 modular não tem um "getAll" fácil sem collection ref, vamos loopar os cenários
+        // ou buscar a coleção inteira se preferir.
+        // Vamos buscar um por um para garantir a estrutura correta baseada no array SCENARIOS
+        
+        // Melhor: Ler todos documentos de uma vez se possível, mas aqui vamos iterar para garantir o merge
+        // com o array SCENARIOS que dita a ordem.
+        
+        for (const s of SCENARIOS) {
+          const docRef = doc(db, PROMPTS_COLLECTION, s.id);
+          const docSnap = await getDoc(docRef);
+
+          let promptText = s.defaultPrompt;
+
+          if (docSnap.exists()) {
+            // Existe no banco, usa o do banco
+            promptText = docSnap.data().text;
+          } else {
+            // Não existe, cria no banco com o default
+            try {
+              await setDoc(docRef, {
+                text: s.defaultPrompt,
+                name: s.name,
+                updatedAt: new Date()
+              });
+              console.log(`Prompt [${s.id}] criado no Firestore.`);
+            } catch (e) {
+              console.error(`Erro ao criar prompt inicial ${s.id}`, e);
+            }
+          }
+
+          initialState[s.id] = {
+            isRunning: false,
+            messages: [],
+            status: "idle",
+            currentPrompt: promptText, // Prompt vindo do DB ou Default
+            isActive: true,
+            sessionUserId: null,
+          };
+        }
+
+        setSimulations(initialState);
+      } catch (error) {
+        console.error("Erro ao sincronizar prompts do Firestore:", error);
+        // Fallback para defaults locais se der erro no banco
+        const fallbackState: Record<string, SimulationState> = {};
+        SCENARIOS.forEach(s => {
+          fallbackState[s.id] = {
+            isRunning: false,
+            messages: [],
+            status: "idle",
+            currentPrompt: s.defaultPrompt,
+            isActive: true,
+            sessionUserId: null,
+          };
+        });
+        setSimulations(fallbackState);
+      } finally {
+        setLoadingPrompts(false);
+      }
+    };
+
+    syncPrompts();
+  }, []);
 
   const updateSim = (id: string, updates: Partial<SimulationState>) => {
     setSimulations((prev) => ({ ...prev, [id]: { ...prev[id], ...updates } }));
@@ -748,6 +842,28 @@ function App() {
       ...prev,
       [id]: { ...prev[id], messages: [...prev[id].messages, msg] },
     }));
+  };
+
+  // ====== FIREBASE SAVE PROMPT ======
+  const handleSavePrompt = async (id: string) => {
+    const sim = simulations[id];
+    if (!sim) return;
+
+    updateSim(id, { isSaving: true });
+    try {
+      const docRef = doc(db, PROMPTS_COLLECTION, id);
+      await updateDoc(docRef, {
+        text: sim.currentPrompt,
+        updatedAt: new Date()
+      });
+      // Pequeno feedback visual (opcional, pode ser um toast)
+      // Aqui só fechamos o loading
+    } catch (error) {
+      console.error("Erro ao salvar prompt:", error);
+      alert("Erro ao salvar prompt no banco.");
+    } finally {
+      updateSim(id, { isSaving: false });
+    }
   };
 
   // ====== PDF EXPORT ======
@@ -780,6 +896,8 @@ function App() {
 
     SCENARIOS.forEach((s, idx) => {
       const sim = simulations[s.id];
+      if (!sim) return; // Se ainda não carregou
+      
       const ident = FIXED_IDENTITIES[s.id];
       const policy = getPolicyForScenario(s.id);
 
@@ -858,178 +976,177 @@ function App() {
     return text;
   };
 
-// 1) ADICIONE/RECOLOQUE esta função (se você removeu no último arquivo)
-const cleanupFirestore = async (signal?: AbortSignal) => {
-  try {
-    await axios.post(
-      "https://delete-luna-base-773388175574.us-central1.run.app",
-      { action: "delete_all" },
-      signal ? { signal } : undefined
-    );
-    return true;
-  } catch (e) {
-    console.error("Erro no cleanup do Firestore:", e);
-    return false;
-  }
-};
-
-// 2) TROQUE a assinatura do runSimulation e o começo dele pra aceitar skipCleanup
-const runSimulation = async (scenarioId: string, opts?: { skipCleanup?: boolean }) => {
-  const sim = simulations[scenarioId];
-  if (!sim?.isActive) return;
-
-  const baseIdentity = FIXED_IDENTITIES[scenarioId];
-  if (!baseIdentity) {
-    updateSim(scenarioId, { status: "error", isRunning: false });
-    addMessage(scenarioId, { role: "SYSTEM", text: "❌ Identidade não encontrada." });
-    return;
-  }
-
-  const policy = getPolicyForScenario(scenarioId);
-
-  const identity: LeadIdentity = {
-    ...baseIdentity,
-    userId: generateSessionUserId(scenarioId),
+  const cleanupFirestore = async (signal?: AbortSignal) => {
+    try {
+      await axios.post(
+        "https://delete-luna-base-773388175574.us-central1.run.app",
+        { action: "delete_all" },
+        signal ? { signal } : undefined
+      );
+      return true;
+    } catch (e) {
+      console.error("Erro no cleanup do Firestore:", e);
+      return false;
+    }
   };
 
-  // reset UI do card
-  setSimulations((prev) => ({
-    ...prev,
-    [scenarioId]: {
-      ...prev[scenarioId],
-      isRunning: true,
-      status: "running",
-      messages: [
-        { role: "SYSTEM", text: "🚀 Iniciando simulação..." },
-      ],
-      sessionUserId: identity.userId,
-    },
-  }));
+  const runSimulation = async (scenarioId: string, opts?: { skipCleanup?: boolean }) => {
+    const sim = simulations[scenarioId];
+    if (!sim?.isActive) return;
 
-  const controller = new AbortController();
-  abortControllers.current[scenarioId] = controller;
-  const signal = controller.signal;
-
-  // ✅ Cleanup só se NÃO for execução em paralelo (runAllSelected)
-  if (!opts?.skipCleanup) {
-    addMessage(scenarioId, { role: "SYSTEM", text: "⏳ Limpando histórico do Firestore..." });
-    const cleaned = await cleanupFirestore(signal);
-
-    if (!cleaned) {
+    const baseIdentity = FIXED_IDENTITIES[scenarioId];
+    if (!baseIdentity) {
       updateSim(scenarioId, { status: "error", isRunning: false });
-      addMessage(scenarioId, { role: "SYSTEM", text: "❌ Cleanup falhou." });
-      delete abortControllers.current[scenarioId];
+      addMessage(scenarioId, { role: "SYSTEM", text: "❌ Identidade não encontrada." });
       return;
     }
 
-    addMessage(scenarioId, { role: "SYSTEM", text: "✨ Firestore limpo. Iniciando..." });
-  } else {
-    console.log("✨ Rodando em paralelo (cleanup global já feito).");
-  }
+    const policy = getPolicyForScenario(scenarioId);
 
-  const personaSystemInstruction = buildPersonaSystemInstruction(
-    sim.currentPrompt,
-    identity,
-    policy
-  );
+    const identity: LeadIdentity = {
+      ...baseIdentity,
+      userId: generateSessionUserId(scenarioId),
+    };
 
-  let localHistory: Message[] = [];
-  let turnCount = 0;
+    // reset UI do card
+    setSimulations((prev) => ({
+      ...prev,
+      [scenarioId]: {
+        ...prev[scenarioId],
+        isRunning: true,
+        status: "running",
+        messages: [
+          { role: "SYSTEM", text: "🚀 Iniciando simulação..." },
+        ],
+        sessionUserId: identity.userId,
+      },
+    }));
 
-  try {
-    let nextHumanMessage =
-      (await generatePersonaResponse([], LUNA_OPENING, personaSystemInstruction, signal)) || "Olá";
+    const controller = new AbortController();
+    abortControllers.current[scenarioId] = controller;
+    const signal = controller.signal;
 
-    while (turnCount < MAX_TURNS && !signal.aborted) {
-      localHistory.push({ role: "HUMANO", text: nextHumanMessage });
-      addMessage(scenarioId, { role: "HUMANO", text: nextHumanMessage });
+    // ✅ Cleanup só se NÃO for execução em paralelo (runAllSelected)
+    if (!opts?.skipCleanup) {
+      addMessage(scenarioId, { role: "SYSTEM", text: "⏳ Limpando histórico do Firestore..." });
+      const cleaned = await cleanupFirestore(signal);
 
-      if (nextHumanMessage.includes("[FIM]")) break;
-
-      let lunaResponse = "";
-      try {
-        lunaResponse = await callLunaApi(identity.userId, nextHumanMessage, signal);
-      } catch (e: any) {
-        if (signal.aborted || e?.code === "ERR_CANCELED") throw e;
-        throw new Error("Falha na resposta da Luna");
+      if (!cleaned) {
+        updateSim(scenarioId, { status: "error", isRunning: false });
+        addMessage(scenarioId, { role: "SYSTEM", text: "❌ Cleanup falhou." });
+        delete abortControllers.current[scenarioId];
+        return;
       }
 
-      localHistory.push({ role: "LUNA", text: lunaResponse });
-      addMessage(scenarioId, { role: "LUNA", text: lunaResponse });
-
-      turnCount++;
-
-      if (shouldAutoFinishFromLuna(lunaResponse)) {
-        addMessage(scenarioId, { role: "SYSTEM", text: "✅ Auto-finish detectado." });
-        break;
-      }
-
-      const historyForPersona = localHistory.slice(0, -1);
-      nextHumanMessage = await generatePersonaResponse(
-        historyForPersona,
-        lunaResponse,
-        personaSystemInstruction,
-        signal
-      );
-
-      await sleep(800);
-    }
-
-    if (!signal.aborted) updateSim(scenarioId, { isRunning: false, status: "finished" });
-  } catch (error: any) {
-    if (signal.aborted) {
-      updateSim(scenarioId, { status: "stopped", isRunning: false });
+      addMessage(scenarioId, { role: "SYSTEM", text: "✨ Firestore limpo. Iniciando..." });
     } else {
-      updateSim(scenarioId, { status: "error", isRunning: false });
-      addMessage(scenarioId, { role: "SYSTEM", text: `❌ Erro: ${error?.message || "desconhecido"}` });
+      console.log("✨ Rodando em paralelo (cleanup global já feito).");
     }
-  } finally {
-    delete abortControllers.current[scenarioId];
-  }
-};
 
-// 3) TROQUE o runAllSelected pra rodar PARALLEL (todos ao mesmo tempo)
-const runAllSelected = async () => {
-  // aborta qualquer coisa rodando
-  stopAll();
+    const personaSystemInstruction = buildPersonaSystemInstruction(
+      sim.currentPrompt,
+      identity,
+      policy
+    );
 
-  // 1 cleanup global (pra não ficar apagando no meio do run)
-  const cleaned = await cleanupFirestore();
+    let localHistory: Message[] = [];
+    let turnCount = 0;
 
-  const ids = SCENARIOS.map((s) => s.id).filter((id) => simulations[id]?.isActive);
+    try {
+      let nextHumanMessage =
+        (await generatePersonaResponse([], LUNA_OPENING, personaSystemInstruction, signal)) || "Olá";
 
-  if (!cleaned) {
-    // marca todos como erro (ou só mostra msg)
+      while (turnCount < MAX_TURNS && !signal.aborted) {
+        localHistory.push({ role: "HUMANO", text: nextHumanMessage });
+        addMessage(scenarioId, { role: "HUMANO", text: nextHumanMessage });
+
+        if (nextHumanMessage.includes("[FIM]")) break;
+
+        let lunaResponse = "";
+        try {
+          lunaResponse = await callLunaApi(identity.userId, nextHumanMessage, signal);
+        } catch (e: any) {
+          if (signal.aborted || e?.code === "ERR_CANCELED") throw e;
+          throw new Error("Falha na resposta da Luna");
+        }
+
+        localHistory.push({ role: "LUNA", text: lunaResponse });
+        addMessage(scenarioId, { role: "LUNA", text: lunaResponse });
+
+        turnCount++;
+
+        if (shouldAutoFinishFromLuna(lunaResponse)) {
+          addMessage(scenarioId, { role: "SYSTEM", text: "✅ Auto-finish detectado." });
+          break;
+        }
+
+        const historyForPersona = localHistory.slice(0, -1);
+        nextHumanMessage = await generatePersonaResponse(
+          historyForPersona,
+          lunaResponse,
+          personaSystemInstruction,
+          signal
+        );
+
+        await sleep(800);
+      }
+
+      if (!signal.aborted) updateSim(scenarioId, { isRunning: false, status: "finished" });
+    } catch (error: any) {
+      if (signal.aborted) {
+        updateSim(scenarioId, { status: "stopped", isRunning: false });
+      } else {
+        updateSim(scenarioId, { status: "error", isRunning: false });
+        addMessage(scenarioId, { role: "SYSTEM", text: `❌ Erro: ${error?.message || "desconhecido"}` });
+      }
+    } finally {
+      delete abortControllers.current[scenarioId];
+    }
+  };
+
+  const runAllSelected = async () => {
+    // aborta qualquer coisa rodando
+    stopAll();
+
+    // 1 cleanup global (pra não ficar apagando no meio do run)
+    const cleaned = await cleanupFirestore();
+
+    const ids = SCENARIOS.map((s) => s.id).filter((id) => simulations[id]?.isActive);
+
+    if (!cleaned) {
+      ids.forEach((id) => {
+        updateSim(id, { status: "error", isRunning: false });
+        addMessage(id, { role: "SYSTEM", text: "❌ Cleanup global falhou. Não iniciou." });
+      });
+      return;
+    }
+
+    // dispara tudo em paralelo
     ids.forEach((id) => {
-      updateSim(id, { status: "error", isRunning: false });
-      addMessage(id, { role: "SYSTEM", text: "❌ Cleanup global falhou. Não iniciou." });
+      setTimeout(() => {
+        runSimulation(id, { skipCleanup: true });
+      }, 50);
     });
-    return;
-  }
+  };
 
-  // dispara tudo em paralelo
-  ids.forEach((id) => {
-    // pequeno delay opcional só pra UI respirar (pode tirar)
-    setTimeout(() => {
-      runSimulation(id, { skipCleanup: true });
-    }, 50);
-  });
-};
-
-  // --- CONTROLES ---
   const stopSimulation = (id: string) => abortControllers.current[id]?.abort();
-
-  // Sequencial (evita “cleanup global”, rate-limit e interferência entre runs)
-
-
+  
   const stopAll = () => Object.keys(simulations).forEach(stopSimulation);
 
-  const hasMessages = Object.values(simulations).some((s) => s.messages.length > 0);
+  const hasMessages = Object.values(simulations).some((s) => s.messages && s.messages.length > 0);
+
+  if (loadingPrompts) {
+    return (
+      <Container>
+        <Header><h2>⚡ Carregando Prompts do Firestore...</h2></Header>
+      </Container>
+    );
+  }
 
   return (
     <Container>
       <Header>
-        <h2>⚡ Luna Multi-Tester (AI vs AI)</h2>
+        <h2>⚡ Luna Multi-Tester (AI vs AI) + Cloud Prompts</h2>
 
         <ButtonGroup>
           <Button onClick={runAllSelected}>▶ Rodar Selecionados</Button>
@@ -1045,6 +1162,8 @@ const runAllSelected = async () => {
       <Grid>
         {SCENARIOS.map((s) => {
           const sim = simulations[s.id];
+          if (!sim) return null; // Safety check
+
           const isEditing = promptEditId === s.id;
           const ident = FIXED_IDENTITIES[s.id];
 
@@ -1101,10 +1220,22 @@ const runAllSelected = async () => {
               </CardHeaderWrapper>
 
               {isEditing && (
-                <PromptEditor
-                  value={sim.currentPrompt}
-                  onChange={(e) => updateSim(s.id, { currentPrompt: e.target.value })}
-                />
+                <PromptEditorContainer>
+                  <PromptEditor
+                    value={sim.currentPrompt}
+                    onChange={(e) => updateSim(s.id, { currentPrompt: e.target.value })}
+                  />
+                  <PromptToolbar>
+                     <Button 
+                       $variant="success" 
+                       style={{fontSize: '0.7rem', padding: '5px 10px'}}
+                       onClick={() => handleSavePrompt(s.id)}
+                       disabled={sim.isSaving}
+                     >
+                       {sim.isSaving ? "Salvando..." : "💾 Salvar no Cloud"}
+                     </Button>
+                  </PromptToolbar>
+                </PromptEditorContainer>
               )}
 
               <ChatArea>
