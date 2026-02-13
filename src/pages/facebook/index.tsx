@@ -194,6 +194,7 @@ function getPolicyForScenario(scenarioId: string): IdentityPolicy {
   return IDENTITY_POLICY[scenarioId] || DEFAULT_IDENTITY_POLICY;
 }
 
+// Substitua a função antiga por esta versão reforçada
 function buildPersonaSystemInstruction(
   basePrompt: string,
   identity: LeadIdentity,
@@ -201,6 +202,7 @@ function buildPersonaSystemInstruction(
 ) {
   let p = String(basePrompt || "");
 
+  // Só força os campos se o cenário permitir fornecer
   if (policy.allowName) p = upsertLine(p, "Nome", identity.name);
   if (policy.allowPhone) p = upsertLine(p, "Telefone", identity.phone);
   if (policy.allowEmail) p = upsertLine(p, "Email", identity.email);
@@ -211,33 +213,41 @@ function buildPersonaSystemInstruction(
 
   const rules = [
     policy.allowName
-      ? `- Quando VOCÊ for fornecer NOME (conforme o roteiro), responda exatamente: ${identity.name}`
-      : `- Se a Luna pedir NOME, NÃO forneça (conforme o roteiro).`,
+      ? `- Se perguntarem seu NOME: responda "${identity.name}"`
+      : `- Se perguntarem seu NOME: invente uma desculpa e NÃO forneça.`,
     policy.allowPhone
-      ? `- Quando VOCÊ for fornecer TELEFONE (conforme o roteiro), responda exatamente: ${identity.phone}`
-      : `- Se a Luna pedir TELEFONE, NÃO forneça (conforme o roteiro).`,
+      ? `- Se perguntarem seu TELEFONE: responda "${identity.phone}"`
+      : `- Se perguntarem seu TELEFONE: diga que prefere não passar.`,
     policy.allowEmail
-      ? `- Quando VOCÊ for fornecer EMAIL (conforme o roteiro), responda exatamente: ${identity.email}`
-      : `- Se a Luna pedir EMAIL, NÃO forneça (conforme o roteiro).`,
+      ? `- Se perguntarem seu EMAIL: responda "${identity.email}"`
+      : `- Se perguntarem seu EMAIL: desconverse.`,
   ].join("\n");
 
   return `
-INSTRUÇÃO DE SIMULAÇÃO (ROLEPLAY):
+🔴 DIRETRIZES CRÍTICAS DE IDENTIDADE (LEIA COM ATENÇÃO):
+1. VOCÊ É O **CLIENTE** (LEAD). VOCÊ **NUNCA** É O ATENDENTE.
+2. É ESTRITAMENTE PROIBIDO usar frases de suporte como: "Entendo sua pergunta", "Posso encaminhar", "Nossos consultores", "Como posso ajudar".
+3. Fale frases curtas, informais e diretas, como alguém digitando no WhatsApp.
+4. Se a Luna (o outro lado) falar muito, NÃO tente competir. Responda apenas o que foi perguntado.
+5. Mantenha-se no personagem abaixo o tempo todo.
+
+---
+PERFIL DO PERSONAGEM:
 ${p}
 
-DADOS FIXOS DESTE PERSONAGEM (use quando for apropriado pelo ROTEIRO):
+---
+SEUS DADOS (USE APENAS SE A LUNA PERGUNTAR):
 - NOME: ${fixedName}
 - TELEFONE: ${fixedPhone}
 - EMAIL: ${fixedEmail}
 
-REGRAS PARA USAR OS DADOS FIXOS:
+REGRAS DE DADOS:
 ${rules}
 
+---
 IMPORTANTE:
-- Inicia a conversa como um lead num chat do site do Midas (você fala como HUMANO).
-- Responda APENAS com a fala do personagem (sem explicar regras).
-- Siga o ROTEIRO do cenário acima (inclusive recusas/adiamentos).
-- Se o roteiro mandar dar [FIM], escreva [FIM].
+- Responda APENAS com a fala do personagem.
+- Se o roteiro disser [FIM], escreva apenas [FIM].
 `.trim();
 }
 
