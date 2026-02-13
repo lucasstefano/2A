@@ -1145,6 +1145,22 @@ function App() {
 
   const hasMessages = Object.values(simulations).some((s) => s.messages && s.messages.length > 0);
 
+  // ====== NOVO: SELECT ALL LOGIC ======
+  // Verifica se todos os cenários estão ativos
+  const allSelected = SCENARIOS.every((s) => simulations[s.id]?.isActive);
+
+  const toggleAllSelection = () => {
+    setSimulations((prev) => {
+      const next = { ...prev };
+      const targetState = !allSelected; // Se tudo selecionado, desmarca. Senão, marca.
+      
+      Object.keys(next).forEach((key) => {
+        next[key] = { ...next[key], isActive: targetState };
+      });
+      return next;
+    });
+  };
+
   if (loadingPrompts) {
     return (
       <Container>
@@ -1159,6 +1175,11 @@ function App() {
         <h2>⚡ Luna Multi-Tester (AI vs AI) + Cloud Prompts</h2>
 
         <ButtonGroup>
+          {/* ====== NOVO BOTÃO ====== */}
+          <Button $variant="secondary" onClick={toggleAllSelection}>
+             {allSelected ? "☐ Desmarcar Todos" : "☑ Selecionar Todos"}
+          </Button>
+
           <Button onClick={runAllSelected}>▶ Rodar Selecionados</Button>
           <Button $variant="danger" onClick={stopAll}>
             ⏹ Parar Tudo
@@ -1236,14 +1257,14 @@ function App() {
                     onChange={(e) => updateSim(s.id, { currentPrompt: e.target.value })}
                   />
                   <PromptToolbar>
-                     <Button 
-                       $variant="success" 
-                       style={{fontSize: '0.7rem', padding: '5px 10px'}}
-                       onClick={() => handleSavePrompt(s.id)}
-                       disabled={sim.isSaving}
-                     >
-                       {sim.isSaving ? "Salvando..." : "💾 Salvar no Cloud"}
-                     </Button>
+                      <Button 
+                        $variant="success" 
+                        style={{fontSize: '0.7rem', padding: '5px 10px'}}
+                        onClick={() => handleSavePrompt(s.id)}
+                        disabled={sim.isSaving}
+                      >
+                        {sim.isSaving ? "Salvando..." : "💾 Salvar no Cloud"}
+                      </Button>
                   </PromptToolbar>
                 </PromptEditorContainer>
               )}
