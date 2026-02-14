@@ -224,12 +224,13 @@ function buildPersonaSystemInstruction(
   ].join("\n");
 
   return `
-🔴 DIRETRIZES CRÍTICAS DE IDENTIDADE (LEIA COM ATENÇÃO):
-1. VOCÊ É O **CLIENTE** (LEAD). VOCÊ **NUNCA** É O ATENDENTE.
-2. É ESTRITAMENTE PROIBIDO usar frases de suporte como: "Entendo sua pergunta", "Posso encaminhar", "Nossos consultores", "Como posso ajudar".
-3. Fale frases curtas, informais e diretas, como alguém digitando no WhatsApp.
-4. Se a Luna (o outro lado) falar muito, NÃO tente competir. Responda apenas o que foi perguntado.
-5. Mantenha-se no personagem abaixo o tempo todo.
+🔴 DIRETRIZES CRÍTICAS (LEIA COM ATENÇÃO):
+1. VOCÊ É O **CLIENTE** (LEAD). VOCÊ **NUNCA** É O ATENDENTE OU A IA.
+2. **PROIBIDO** escrever pensamentos internos, blocos "THINK", ou explicações do raciocínio.
+3. Responda APENAS a fala final, como se estivesse no WhatsApp.
+4. Fale frases curtas, informais e diretas.
+5. Se a Luna falar muito, NÃO tente competir. Responda apenas o que foi perguntado.
+6. Mantenha-se no personagem abaixo o tempo todo.
 
 ---
 PERFIL DO PERSONAGEM:
@@ -248,31 +249,17 @@ ${rules}
 IMPORTANTE:
 - Responda APENAS com a fala do personagem.
 - Se o roteiro disser [FIM], escreva apenas [FIM].
+- NÃO inicie a resposta com "THINK" ou tags de pensamento.
 `.trim();
 }
-
 // ====== AUTO-FINISH (LUNA ENCERRA PROPÓSITO) ======
 function shouldAutoFinishFromLuna(text: string) {
   const t = String(text || "").toLowerCase();
   const handoff = [
-    "vou encaminhar",
-    "encaminhar para um consultor",
-    "um consultor vai entrar em contato",
-    "um de nossos especialistas",
-    "vou passar seu contato",
-    "nossa equipe vai falar com você",
-    "entraremos em contato",
-    "vamos te chamar",
-    "vamos te ligar",
+    "ASASAS",
   ];
   const refuse = [
-    "nao consigo te ajudar",
-    "não consigo te ajudar",
-    "nao posso ajudar",
-    "não posso ajudar",
-    "preciso do seu nome",
-    "preciso do seu telefone",
-    "preciso do seu email",
+    "ASDAD",
   ];
   const hit = (arr: string[]) => arr.some((k) => t.includes(k));
   return hit(handoff) || hit(refuse);
@@ -950,7 +937,7 @@ function App() {
   };
 
   // --- API CALLS ---
-  const generatePersonaResponse = async (
+const generatePersonaResponse = async (
     history: Message[],
     lastMessage: string,
     systemInstruction: string,
@@ -966,7 +953,29 @@ function App() {
         },
         signal ? { signal } : undefined
       );
-      return (res.data.text as string) || "";
+
+      let rawText = (res.data.text as string) || "";
+
+      // ====== LIMPEZA DE ALUCINAÇÕES (THINK/COT) ======
+      
+      // 1. Remove blocos que começam com THINK até uma quebra de linha dupla ou fim
+      // Ex: "THINK\nBla bla bla\n\nOlá" -> vira "Olá"
+      let cleanText = rawText.replace(/THINK[\s\S]*?(\n\n|$)/gi, "").trim();
+
+      // 2. Fallback: Se o texto ainda tiver "THINK", tenta pegar só a última linha não vazia
+      if (cleanText.includes("THINK")) {
+         const lines = cleanText.split('\n').filter(line => line.trim() !== "");
+         cleanText = lines[lines.length - 1] || cleanText;
+      }
+
+      // 3. Remove aspas extras que o modelo as vezes coloca
+      cleanText = cleanText.replace(/^["']|["']$/g, "");
+
+      // 4. Remove prefixos de role se o modelo alucinar (Ex: "Larissa: Oi")
+      cleanText = cleanText.replace(/^(Larissa|Cliente|Lead|Eu|Human|User):\s*/i, "");
+
+      return cleanText || "...";
+
     } catch (e: any) {
       // Abort (axios)
       if (e?.code === "ERR_CANCELED") return "";
@@ -974,6 +983,7 @@ function App() {
       return "Erro ao gerar persona";
     }
   };
+
 
   const callLunaApi = async (userId: string, userMessage: string, signal: AbortSignal) => {
     const res = await axios.post(
